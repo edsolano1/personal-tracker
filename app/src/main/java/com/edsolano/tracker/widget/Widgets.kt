@@ -92,10 +92,10 @@ private fun MoneyContent(s: DaySnapshot, big: Int) {
     val m = s.money
     if (m == null) {
         Text("—", style = style(big, Muted, bold = true))
-        Text("No [Money] event today", style = style(11, Muted))
+        Text("No [Money] event", style = style(11, Muted))
     } else {
-        Text(Format.money(m.adjustedLeft), style = style(big, if (m.adjustedLeft < 0) Warn else Fg, bold = true))
-        if (m.tipEstimates > 0) Text("incl. ${Format.money(m.tipEstimates)} tip est.", style = style(11, Muted))
+        Text(Format.money(m.spendingLeft), style = style(big, if (m.spendingLeft < 0) Warn else Fg, bold = true))
+        if (s.moneyIsStale) Text("as of ${Format.date(m.date)}", style = style(11, Muted))
     }
 }
 

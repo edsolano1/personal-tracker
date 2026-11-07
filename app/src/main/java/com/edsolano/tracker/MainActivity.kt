@@ -3,6 +3,7 @@ package com.edsolano.tracker
 import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.edsolano.tracker.data.CalendarRepository
 import com.edsolano.tracker.data.DaySnapshot
+import com.edsolano.tracker.data.DoneStore
+import com.edsolano.tracker.ui.DebugScreen
 import com.edsolano.tracker.ui.FoodScreen
 import com.edsolano.tracker.ui.MoneyScreen
 import com.edsolano.tracker.ui.TodayScreen
@@ -44,7 +47,10 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val repo by lazy { CalendarRepository(this) }
-    private var snapshot by mutableStateOf(DaySnapshot(emptyList(), null, System.currentTimeMillis()))
+    private val doneStore by lazy { DoneStore(this) }
+    private var snapshot by mutableStateOf(DaySnapshot.empty())
+    private var done by mutableStateOf(emptySet<String>())
+    private var showDebug by mutableStateOf(false)
     private var hasCalendar by mutableStateOf(false)
 
     private val askPermissions = registerForActivityResult(
@@ -69,6 +75,7 @@ class MainActivity : ComponentActivity() {
 
     private fun reload() {
         hasCalendar = repo.hasPermission()
+        done = doneStore.all()
         lifecycleScope.launch {
             snapshot = withContext(Dispatchers.IO) { repo.load() }
             if (hasCalendar) {
@@ -81,6 +88,7 @@ class MainActivity : ComponentActivity() {
     @androidx.compose.runtime.Composable
     private fun Root() {
         var tab by rememberSaveable { mutableIntStateOf(0) }
+        BackHandler(enabled = showDebug) { showDebug = false }
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
@@ -91,7 +99,7 @@ class MainActivity : ComponentActivity() {
                         "Money" to Icons.Filled.ShoppingCart,
                     ).forEachIndexed { i, (label, icon) ->
                         NavigationBarItem(
-                            selected = tab == i, onClick = { tab = i },
+                            selected = tab == i && !showDebug, onClick = { tab = i; showDebug = false },
                             icon = { Icon(icon, contentDescription = label) }, label = { Text(label) },
                         )
                     }
@@ -110,8 +118,10 @@ class MainActivity : ComponentActivity() {
                             Text("Allow calendar access")
                         }
                     }
+                } else if (showDebug) {
+                    DebugScreen(snapshot, onBack = { showDebug = false })
                 } else when (tab) {
-                    0 -> TodayScreen(snapshot)
+                    0 -> TodayScreen(snapshot, done, onToggle = { done = doneStore.toggle(it) }, onDebug = { showDebug = true })
                     1 -> FoodScreen(snapshot)
                     else -> MoneyScreen(snapshot)
                 }

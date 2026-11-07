@@ -1,5 +1,7 @@
 package com.edsolano.tracker.data
 
+import java.time.LocalDate
+
 /**
  * Turns the calendar events Claude Duet writes into app data.
  * Pure Kotlin with no Android imports, so it is covered by unit tests.
@@ -7,67 +9,67 @@ package com.edsolano.tracker.data
 object EventParser {
     private const val PLAN_PREFIX = "[Plan]"
     private const val MONEY_PREFIX = "[Money]"
-    private val amountRegex = Regex("""-?\$?\s*(-?\d[\d,]*(?:\.\d+)?)""")
-    private val keyValue = Regex("""^\s*[-*•]?\s*([A-Za-z ]+?)\s*[:=]\s*(.+?)\s*$""")
-    private val restaurantWords = listOf("restaurant", "dining", "dine", "food & drink", "bar", "cafe", "café")
+    private val keyValue = Regex("""^\s*([A-Za-z_ ]+?)\s*:\s*(.*?)\s*$""")
 
     fun isPlan(title: String?) = title?.trimStart()?.startsWith(PLAN_PREFIX, ignoreCase = true) == true
     fun isMoney(title: String?) = title?.trimStart()?.startsWith(MONEY_PREFIX, ignoreCase = true) == true
 
+    /** Description is "key: value" lines: type, slot, mins, cal, protein, swap. Unknown keys are ignored. */
     fun parsePlan(id: Long, title: String, description: String?, start: Long, end: Long): PlanItem {
         val name = title.trimStart().substring(PLAN_PREFIX.length).trim()
+        var type: String? = null
+        var slot: String? = null
+        var mins: Int? = null
         var cal = 0
         var protein = 0
-        var workout = false
-        val desc = description.orEmpty()
-        desc.lines().forEach { line ->
+        val swaps = mutableListOf<Swap>()
+        description.orEmpty().lines().forEach { line ->
             val m = keyValue.find(line) ?: return@forEach
-            val key = m.groupValues[1].trim().lowercase()
             val value = m.groupValues[2]
-            when (key) {
-                "cal", "cals", "calories", "kcal" -> cal = firstInt(value) ?: cal
-                "protein", "prot" -> protein = firstInt(value) ?: protein
-                "tag", "tags", "type", "kind", "category" ->
-                    if (value.contains("workout", ignoreCase = true)) workout = true
+            when (m.groupValues[1].trim().lowercase()) {
+                "type" -> type = value
+                "slot" -> slot = value.ifBlank { null }
+                "mins" -> mins = int(value)
+                "cal" -> cal = int(value) ?: 0
+                "protein" -> protein = int(value) ?: 0
+                "swap" -> parseSwap(value)?.let { swaps += it }
             }
         }
-        if (Regex("""#workout\b""", RegexOption.IGNORE_CASE).containsMatchIn(desc)) workout = true
-        return PlanItem(id, name, start, end, cal, protein, workout)
+        return PlanItem(id, name, start, end, PlanType.from(type), slot, mins, cal, protein, swaps)
     }
 
-    /** "[Money] Spending left: $123" plus an optional list of charges in the description. */
-    fun parseMoney(title: String, description: String?): MoneyDay? {
-        val afterPrefix = title.trimStart().substring(MONEY_PREFIX.length)
-        val left = parseAmount(afterPrefix.substringAfter(":", afterPrefix)) ?: return null
-        val charges = description.orEmpty().lines().mapNotNull { parseCharge(it) }
-        return MoneyDay(left, charges)
+    /** "Huel | 400 | 40" → name | cal | protein */
+    internal fun parseSwap(value: String): Swap? {
+        val parts = value.split('|').map { it.trim() }
+        if (parts.size < 3 || parts[0].isEmpty()) return null
+        return Swap(parts[0], int(parts[1]) ?: return null, int(parts[2]) ?: return null)
     }
 
-    /**
-     * One charge per line, e.g. "- Chipotle $14.50 (restaurant, pending)".
-     * A line counts as a charge if it has a dollar amount; "pending" and
-     * restaurant words are picked up anywhere in the line.
-     */
-    internal fun parseCharge(raw: String): Charge? {
-        val line = raw.trim().trimStart('-', '*', '•').trim()
-        if (line.isEmpty() || !line.contains('$')) return null
-        val amount = parseAmount(line.substring(line.indexOf('$'))) ?: return null
-        val lower = line.lowercase()
-        val label = line.substringBefore('$').trim().trimEnd(':', '-', '–').trim().ifEmpty { "Charge" }
-        return Charge(
-            label = label,
-            amount = kotlin.math.abs(amount),
-            isRestaurant = restaurantWords.any { lower.contains(it) },
-            isPending = lower.contains("pending"),
-        )
+    /** Title "[Money] Spending left: $123.45"; description lines "pending | Chipotle | 17.40 | tip". */
+    fun parseMoney(date: LocalDate, title: String, description: String?): MoneyDay? {
+        val after = title.trimStart().substring(MONEY_PREFIX.length)
+        val left = parseAmount(after.substringAfter(':', after)) ?: return null
+        return MoneyDay(date, left, description.orEmpty().lines().mapNotNull { parseCharge(it) })
+    }
+
+    internal fun parseCharge(line: String): Charge? {
+        val parts = line.split('|').map { it.trim() }
+        if (parts.size < 3) return null
+        val status = when (parts[0].lowercase()) {
+            "pending" -> ChargeStatus.PENDING
+            "posted" -> ChargeStatus.POSTED
+            else -> return null
+        }
+        val amount = parseAmount(parts[2]) ?: return null
+        val tip = parts.drop(3).any { it.equals("tip", ignoreCase = true) }
+        return Charge(status, parts[1], amount, tip)
     }
 
     internal fun parseAmount(text: String): Double? {
-        val m = amountRegex.find(text) ?: return null
-        val neg = text.substring(0, m.range.first + 1).contains('-') || m.groupValues[1].startsWith("-")
-        val v = m.groupValues[1].replace(",", "").trimStart('-').toDoubleOrNull() ?: return null
-        return if (neg) -v else v
+        val m = Regex("""(-)?\s*\$?\s*(-)?(\d[\d,]*(?:\.\d+)?)""").find(text) ?: return null
+        val v = m.groupValues[3].replace(",", "").toDoubleOrNull() ?: return null
+        return if (m.groupValues[1].isNotEmpty() || m.groupValues[2].isNotEmpty()) -v else v
     }
 
-    private fun firstInt(s: String) = Regex("""\d+""").find(s)?.value?.toIntOrNull()
+    private fun int(s: String) = Regex("""-?\d+""").find(s)?.value?.toIntOrNull()
 }

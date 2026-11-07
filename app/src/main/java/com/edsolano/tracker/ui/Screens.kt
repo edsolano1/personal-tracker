@@ -14,29 +14,35 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.edsolano.tracker.data.Charge
 import com.edsolano.tracker.data.DaySnapshot
 import com.edsolano.tracker.data.PlanItem
+import com.edsolano.tracker.data.PlanType
 
 private val pad = PaddingValues(16.dp)
 
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
+private fun Section(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Card(
-        Modifier.fillMaxWidth(),
+        modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
@@ -49,23 +55,31 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-fun EmptyNote(text: String) = Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun Muted(text: String, small: Boolean = false, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) =
+    Text(text, color = color, style = if (small) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium)
+
+// ---------- Today ----------
 
 @Composable
-fun TodayScreen(s: DaySnapshot) {
+fun TodayScreen(s: DaySnapshot, done: Set<String>, onToggle: (String) -> Unit, onDebug: () -> Unit) {
     LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Text(if (s.isLiftDay) "Lift day" else "Rest day", style = MaterialTheme.typography.headlineSmall)
-            Text("Target ${Format.int(s.calorieTarget)} cal · ${s.proteinTarget}g protein",
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(if (s.isLiftDay) "Lift day" else "Rest day", style = MaterialTheme.typography.headlineSmall)
+                    Muted("Target ${Format.int(s.calorieTarget)} cal · ${s.proteinTarget}g protein")
+                }
+                TextButton(onClick = onDebug) { Text("Raw events") }
+            }
         }
-        if (s.plan.isEmpty()) item { Section("Timeline") { EmptyNote("No [Plan] items on the calendar today.") } }
-        else item {
+        item {
             Section("Timeline") {
+                if (s.plan.isEmpty()) Muted("No [Plan] items on the calendar today.")
                 val next = s.upcoming(1).firstOrNull()
                 s.plan.forEachIndexed { i, it ->
-                    TimelineRow(it, isPast = it.endMillis <= s.nowMillis, isNext = it == next)
-                    if (i < s.plan.lastIndex) Spacer(Modifier.height(10.dp))
+                    TimelineRow(it, isPast = it.endMillis <= s.nowMillis, isNext = it == next,
+                        done = it.doneKey in done, onToggle = { onToggle(it.doneKey) })
+                    if (i < s.plan.lastIndex) Spacer(Modifier.height(4.dp))
                 }
             }
         }
@@ -73,46 +87,78 @@ fun TodayScreen(s: DaySnapshot) {
 }
 
 @Composable
-private fun TimelineRow(item: PlanItem, isPast: Boolean, isNext: Boolean) {
-    val dim = if (isPast) 0.45f else 1f
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(10.dp).background(
-            if (isNext) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, CircleShape))
-        Spacer(Modifier.width(12.dp))
-        Text(Format.time(item.startMillis), Modifier.width(76.dp),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = dim), fontWeight = FontWeight.SemiBold)
+private fun TimelineRow(item: PlanItem, isPast: Boolean, isNext: Boolean, done: Boolean, onToggle: () -> Unit) {
+    val alpha = if ((isPast || done) && !isNext) 0.5f else 1f
+    val bg = if (isNext) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
+    Row(
+        Modifier.fillMaxWidth().background(bg, RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(Format.time(item.startMillis), Modifier.width(72.dp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = alpha), fontWeight = FontWeight.SemiBold)
         Column(Modifier.weight(1f)) {
-            Text(item.name, color = MaterialTheme.colorScheme.onSurface.copy(alpha = dim))
-            val detail = buildList {
-                if (item.isWorkout) add("Workout")
-                if (item.calories > 0) add("${item.calories} cal")
-                if (item.protein > 0) add("${item.protein}g protein")
-            }.joinToString(" · ")
-            if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = dim))
+            Text(item.name, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                fontWeight = if (isNext) FontWeight.SemiBold else FontWeight.Normal)
+            val detail = detailOf(item)
+            if (detail.isNotEmpty()) Muted(detail, small = true,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha))
         }
+        if (!item.isFood) {
+            Checkbox(checked = done, onCheckedChange = { onToggle() },
+                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary))
+        } else Spacer(Modifier.size(48.dp))
     }
 }
+
+private fun detailOf(item: PlanItem) = buildList {
+    when (item.type) {
+        PlanType.MEAL -> add(item.slot ?: "Meal")
+        PlanType.OTHER -> {}
+        else -> add(item.type.name.lowercase().replaceFirstChar { it.uppercase() })
+    }
+    item.minutes?.takeIf { it > 0 }?.let { add("$it min") }
+    if (item.calories > 0) add("${item.calories} cal")
+    if (item.protein > 0) add("${item.protein}g protein")
+}.joinToString(" · ")
+
+// ---------- Food ----------
 
 @Composable
 fun FoodScreen(s: DaySnapshot) {
     LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Section("Calories") {
-                Totals(s.caloriesSoFar, s.caloriesPlanned, s.calorieTarget, "", AccentGreen)
-                Text(if (s.isLiftDay) "Lift day target" else "Rest day target",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Section(if (s.isLiftDay) "Eaten vs target · lift day" else "Eaten vs target · rest day") {
+                Bar("Calories", s.caloriesSoFar, s.calorieTarget, "", AccentGreen)
+                Spacer(Modifier.height(14.dp))
+                Bar("Protein", s.proteinSoFar, s.proteinTarget, "g", ProteinBlue)
             }
         }
-        item { Section("Protein") { Totals(s.proteinSoFar, s.proteinPlanned, s.proteinTarget, "g", ProteinBlue) } }
-        val food = s.plan.filter { it.calories > 0 || it.protein > 0 }
         item {
-            Section("Items") {
-                if (food.isEmpty()) EmptyNote("No food plan items today.")
-                food.forEach {
+            Section("Meals") {
+                if (s.meals.isEmpty()) Muted("No meals on the plan today.")
+                s.meals.forEach { m ->
+                    val eaten = m.startMillis <= s.nowMillis
+                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(m.name, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (eaten) 1f else 0.7f))
+                            Muted("${m.slot ?: "Meal"} · ${Format.time(m.startMillis)}" + if (eaten) " · eaten" else "", small = true)
+                        }
+                        Text("${m.calories} cal · ${m.protein}g")
+                    }
+                    m.swaps.forEach { sw -> Muted("   or ${sw.name}: ${sw.calories} cal · ${sw.protein}g", small = true) }
+                }
+            }
+        }
+        item {
+            Section("Fits what's left") {
+                Muted("${Format.int(s.caloriesLeft)} cal and ${s.proteinLeft}g protein left", small = true)
+                Spacer(Modifier.height(6.dp))
+                val ideas = s.fitsWhatsLeft()
+                if (ideas.isEmpty()) Muted("You're at your calorie target.")
+                ideas.forEach {
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Text(it.name, Modifier.weight(1f))
-                        Text("${it.calories} cal · ${it.protein}g", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Muted("${it.calories} cal · ${it.protein}g")
                     }
                 }
             }
@@ -121,61 +167,83 @@ fun FoodScreen(s: DaySnapshot) {
 }
 
 @Composable
-private fun Totals(soFar: Int, planned: Int, target: Int, unit: String, color: Color) {
+private fun Bar(label: String, value: Int, target: Int, unit: String, color: Color) {
     Row(verticalAlignment = Alignment.Bottom) {
-        Text("${Format.int(soFar)}$unit", fontSize = 34.sp, fontWeight = FontWeight.Bold)
-        Text("  / ${Format.int(target)}$unit", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${Format.int(value)}$unit", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Muted(" / ${Format.int(target)}$unit")
     }
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(6.dp))
     LinearProgressIndicator(
-        progress = { (soFar.toFloat() / target).coerceIn(0f, 1f) },
-        modifier = Modifier.fillMaxWidth().height(6.dp),
-        color = color,
-        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-    )
-    Spacer(Modifier.height(8.dp))
-    val gap = target - planned
-    Text(
-        "Planned ${Format.int(planned)}$unit · " +
-            if (gap > 0) "${Format.int(gap)}$unit short of target" else "target covered",
-        style = MaterialTheme.typography.bodySmall,
-        color = if (gap > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        progress = { (value.toFloat() / target).coerceIn(0f, 1f) },
+        modifier = Modifier.fillMaxWidth().height(8.dp),
+        color = color, trackColor = MaterialTheme.colorScheme.surfaceVariant,
     )
 }
+
+// ---------- Money ----------
 
 @Composable
 fun MoneyScreen(s: DaySnapshot) {
+    val m = s.money
     LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        val m = s.money
         item {
             Section("Spending left today") {
-                if (m == null) EmptyNote("No [Money] event on the calendar today.")
+                if (m == null) Muted("No [Money] event for today or yesterday.")
                 else {
-                    Text(Format.money(m.adjustedLeft), fontSize = 48.sp, fontWeight = FontWeight.Bold,
-                        color = if (m.adjustedLeft < 0) WarnRed else MaterialTheme.colorScheme.onSurface)
-                    if (m.tipEstimates > 0) Text(
-                        "${Format.money(m.spendingLeft)} minus ${Format.money(m.tipEstimates)} estimated tips",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Unspent money carries over to tomorrow.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(Format.money(m.spendingLeft), fontSize = 52.sp, fontWeight = FontWeight.Bold,
+                        color = if (m.spendingLeft < 0) WarnRed else MaterialTheme.colorScheme.onSurface)
+                    if (s.moneyIsStale) Muted("as of ${Format.date(m.date)}", small = true)
                 }
             }
         }
-        if (m != null && m.charges.isNotEmpty()) item {
-            Section("Charges") {
-                m.charges.forEach { c ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            Text(c.label)
-                            val tags = buildList {
-                                add(if (c.isPending) "Pending" else "Posted")
-                                if (c.tipEstimate > 0) add("+${Format.money(c.tipEstimate)} tip est.")
-                            }.joinToString(" · ")
-                            Text(tags, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text(Format.money(c.amount + c.tipEstimate))
-                    }
+        if (m != null) {
+            item { ChargeList("Pending", m.pending) }
+            item { ChargeList("Posted", m.posted) }
+        }
+    }
+}
+
+@Composable
+private fun ChargeList(title: String, charges: List<Charge>) = Section(title) {
+    if (charges.isEmpty()) Muted("None")
+    charges.forEach { c ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(c.label)
+                if (c.includesTip) Muted("includes 20% tip estimate", small = true)
+            }
+            Text(Format.money(c.amount))
+        }
+    }
+}
+
+// ---------- Debug ----------
+
+@Composable
+fun DebugScreen(s: DaySnapshot, onBack: () -> Unit) {
+    LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Raw events", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+                TextButton(onClick = onBack) { Text("Close") }
+            }
+            Muted(
+                if (s.calendarFound) "Reading the \"Personal Tracker\" calendar."
+                else "No \"Personal Tracker\" calendar found, so reading [Plan]/[Money] events from every calendar.",
+                small = true,
+            )
+            Muted("Today and yesterday · ${s.raw.size} events", small = true)
+        }
+        if (s.raw.isEmpty()) item { Muted("No [Plan] or [Money] events found.") }
+        items(s.raw) { r ->
+            Section(if (r.allDay) "All day · ${r.calendar}" else "${Format.dateTime(r.begin)} · ${r.calendar}") {
+                Text(r.title, fontWeight = FontWeight.SemiBold)
+                Text("→ ${r.parsedAs}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                if (r.description.isNotBlank()) {
+                    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                    Text(r.description, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

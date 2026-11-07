@@ -2,55 +2,82 @@ package com.edsolano.tracker.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 class EventParserTest {
-    @Test fun planItemReadsCaloriesAndProtein() {
-        val p = EventParser.parsePlan(1, "[Plan] Huel", "cal: 450\nprotein: 30", 0, 1)
-        assertEquals("Huel", p.name)
+    private val today = LocalDate.of(2026, 11, 7)
+
+    private fun plan(title: String, desc: String, start: Long = 0, end: Long = 1, id: Long = 1) =
+        EventParser.parsePlan(id, title, desc, start, end)
+
+    @Test fun workoutPlanItem() {
+        val p = plan("[Plan] Back + Chest", "type: workout\nslot: Evening\nmins: 60\ncal: 0\nprotein: 0")
+        assertEquals("Back + Chest", p.name)
+        assertEquals(PlanType.WORKOUT, p.type)
+        assertEquals("Evening", p.slot)
+        assertEquals(60, p.minutes)
+        assertTrue(p.isWorkout)
+        assertFalse(p.isFood)
+        assertEquals(Targets.CAL_LIFT, DaySnapshot(today, listOf(p), null, 0).calorieTarget)
+    }
+
+    @Test fun mealWithSwapsAndUnknownKeys() {
+        val p = plan("[Plan] Huel", "type: meal\nslot: Breakfast\ncal: 450\nprotein: 30\nfoo: bar\nswap: Huel | 400 | 40\nswap: bad line")
+        assertEquals(PlanType.MEAL, p.type)
         assertEquals(450, p.calories)
         assertEquals(30, p.protein)
-        assertFalse(p.isWorkout)
+        assertEquals(listOf(Swap("Huel", 400, 40)), p.swaps)
+        assertTrue(p.isFood)
     }
 
-    @Test fun workoutTagMakesLiftDay() {
-        val p = EventParser.parsePlan(2, "[Plan] Back + Chest", "tag: workout", 0, 1)
-        assertTrue(p.isWorkout)
-        val s = DaySnapshot(listOf(p), null, 0)
-        assertEquals(Targets.CAL_LIFT, s.calorieTarget)
-        assertEquals(Targets.CAL_REST, DaySnapshot(emptyList(), null, 0).calorieTarget)
+    @Test fun restDayWithoutWorkout() {
+        val p = plan("[Plan] Walk", "type: walk\nmins: 30")
+        assertEquals(Targets.CAL_REST, DaySnapshot(today, listOf(p), null, 0).calorieTarget)
     }
 
-    @Test fun hashtagWorkoutAlsoCounts() {
-        assertTrue(EventParser.parsePlan(3, "[Plan] Legs", "#workout", 0, 1).isWorkout)
+    @Test fun moneyTitleAndCharges() {
+        val m = EventParser.parseMoney(today, "[Money] Spending left: $123.45",
+            "pending | Chipotle | 17.40 | tip\npending | Target | 23.10\nposted | Starbucks | 6.25\nsomething else")!!
+        assertEquals(123.45, m.spendingLeft, 0.001)
+        assertEquals(2, m.pending.size)
+        assertEquals(1, m.posted.size)
+        assertTrue(m.pending[0].includesTip)
+        assertFalse(m.pending[1].includesTip)
+        assertEquals(17.40, m.pending[0].amount, 0.001)   // shown as written, no math
+        assertEquals("Starbucks", m.posted[0].label)
     }
 
-    @Test fun moneyTitleParses() {
-        val m = EventParser.parseMoney("[Money] Spending left: $123", null)
-        assertNotNull(m); assertEquals(123.0, m!!.spendingLeft, 0.001)
-        assertEquals(-12.5, EventParser.parseMoney("[Money] Spending left: -$12.50", null)!!.spendingLeft, 0.001)
-        assertEquals(1234.56, EventParser.parseMoney("[Money] Spending left: $1,234.56", null)!!.spendingLeft, 0.001)
+    @Test fun moneyAmountFormats() {
+        assertEquals(-12.5, EventParser.parseMoney(today, "[Money] Spending left: -$12.50", null)!!.spendingLeft, 0.001)
+        assertEquals(-12.5, EventParser.parseMoney(today, "[Money] Spending left: $-12.50", null)!!.spendingLeft, 0.001)
+        assertEquals(1234.56, EventParser.parseMoney(today, "[Money] Spending left: $1,234.56", null)!!.spendingLeft, 0.001)
+        assertNull(EventParser.parseMoney(today, "[Money] Spending left: ?", null))
     }
 
-    @Test fun pendingRestaurantGetsTipEstimate() {
-        val m = EventParser.parseMoney(
-            "[Money] Spending left: $100",
-            "Pending:\n- Chipotle $20.00 (restaurant, pending)\n- Target $15.00 (pending)\n- Olive Garden $40 (restaurant)",
-        )!!
-        assertEquals(3, m.charges.size)
-        assertEquals(4.0, m.tipEstimates, 0.001)      // only the pending restaurant one
-        assertEquals(96.0, m.adjustedLeft, 0.001)
-        assertEquals("Chipotle", m.charges[0].label)
+    @Test fun staleMoneyFlag() {
+        val y = EventParser.parseMoney(today.minusDays(1), "[Money] Spending left: $5", null)
+        assertTrue(DaySnapshot(today, emptyList(), y, 0).moneyIsStale)
     }
 
-    @Test fun snapshotCountsOnlyStartedItems() {
-        val a = EventParser.parsePlan(1, "[Plan] A", "cal: 400\nprotein: 40", 0, 10)
-        val b = EventParser.parsePlan(2, "[Plan] B", "cal: 600\nprotein: 50", 100, 110)
-        val s = DaySnapshot(listOf(a, b), null, 50)
+    @Test fun foodTotalsCountStartedMealsOnly() {
+        val a = plan("[Plan] A", "type: meal\ncal: 400\nprotein: 40", 0, 10, 1)
+        val b = plan("[Plan] B", "type: meal\ncal: 600\nprotein: 50", 100, 110, 2)
+        val w = plan("[Plan] Lift", "type: workout\ncal: 0", 20, 30, 3)
+        val s = DaySnapshot(today, listOf(a, w, b), null, 50)
         assertEquals(400, s.caloriesSoFar)
-        assertEquals(1000, s.caloriesPlanned)
+        assertEquals(40, s.proteinSoFar)
         assertEquals(listOf("B"), s.upcoming().map { it.name })
+        assertEquals(2, s.meals.size)
+    }
+
+    @Test fun fitsWhatsLeftRespectsCalories() {
+        val big = plan("[Plan] Dinner", "type: meal\ncal: 1800\nprotein: 100\nswap: Tofu bowl | 500 | 35", 0, 1)
+        val s = DaySnapshot(today, listOf(big), null, 10)   // 100 cal left on a rest day
+        assertTrue(s.fitsWhatsLeft().all { it.calories <= 100 })
+        val fresh = DaySnapshot(today, listOf(plan("[Plan] Later", "type: meal\ncal: 500\nswap: Tofu bowl | 500 | 35", 100, 110)), null, 10)
+        assertTrue(fresh.fitsWhatsLeft(20).any { it.name == "Tofu bowl" })
     }
 }

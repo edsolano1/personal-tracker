@@ -6,16 +6,34 @@ home-screen widgets and three screens. Offline, no login, no backend. It's a
 sideloaded debug build and is never published.
 
 ## What it reads
+Events come from the Google calendar named **Personal Tracker**. If that
+calendar doesn't exist, any calendar's `[Plan]`/`[Money]` events are used.
 
-| Event | Example | Used for |
-|---|---|---|
-| Plan item | `[Plan] Huel`, description `cal: 450` / `protein: 30` | Timeline, food totals, notifications |
-| Workout | a plan item whose description has `tag: workout` (or `#workout`) | Makes the day a lift day (2,200 cal) |
-| Money | all-day `[Money] Spending left: $123` | Money widget and screen |
-| Charges | description lines like `- Chipotle $20.00 (restaurant, pending)` | Pending restaurant charges get a 20% tip estimate |
+**Plan items** – timed event, title `[Plan] Back + Chest`, description lines:
+```
+type: workout        # meal | workout | walk | task | event
+slot: Evening        # meals: Breakfast | Lunch | Dinner | Snack
+mins: 60
+cal: 0
+protein: 0
+swap: Huel | 400 | 40   # optional, meals only: name | cal | protein
+```
+A `type: workout` item makes it a lift day. Unknown keys are ignored.
+
+**Money** – all-day event `[Money] Spending left: $123.45`, description lines:
+```
+pending | Chipotle | 17.40 | tip
+pending | Target | 23.10
+posted | Starbucks | 6.25
+```
+The title number is final (carryover, pending charges and tips already
+included); the app only displays it. The newest `[Money]` event for today
+wins; with none today, yesterday's is shown with an "as of" date.
 
 Targets: 165 g protein; 1,900 cal on rest days, 2,200 on lift days.
-A plan item counts as eaten once its start time has passed.
+A meal counts as eaten once its start time has passed. Done checks on
+non-food items are stored on the phone only. **Today → Raw events** shows
+every event the app read and how it parsed it.
 
 ## Widgets
 - **Today** (3×2): next 4 plan items with times, calories and protein vs targets
