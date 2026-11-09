@@ -26,6 +26,9 @@ class CalendarRepository(private val context: Context) {
     }
 
     fun load(date: LocalDate = LocalDate.now(), now: Long = System.currentTimeMillis()): DaySnapshot {
+        // Read the answers here so the widgets and notifications get the same totals
+        // as the app without every caller having to wire the store through.
+        val store = DoneStore(context)
         if (!hasPermission()) return DaySnapshot(date, emptyList(), null, now)
         val zone = ZoneId.systemDefault()
         // Yesterday through tomorrow, padded a day: covers all-day UTC offsets and the
@@ -72,7 +75,10 @@ class CalendarRepository(private val context: Context) {
             }
         }
         val money = moneyByDate[date]?.second ?: moneyByDate[date.minusDays(1)]?.second
-        return DaySnapshot(date, plan.sortedBy { it.startMillis }, money, now, calendarFound, raw.sortedBy { it.begin })
+        return DaySnapshot(
+            date, plan.sortedBy { it.startMillis }, money, now, calendarFound,
+            raw.sortedBy { it.begin }, store.done(), store.skipped(),
+        )
     }
 
     private fun query(from: Long, to: Long): List<Row> {

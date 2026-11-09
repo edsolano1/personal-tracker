@@ -28,6 +28,9 @@ data class PlanItem(
     val doneKey get() = "$id@$startMillis"
 }
 
+/** Whether a meal on the plan actually happened. Nothing is assumed from the clock. */
+enum class MealAnswer { UNANSWERED, ATE, SKIPPED }
+
 enum class ChargeStatus { PENDING, POSTED }
 
 /** One charge line, shown as written. Duet's amounts are final; the app does no math on them. */
@@ -59,14 +62,29 @@ data class DaySnapshot(
     val nowMillis: Long,
     val calendarFound: Boolean = false,
     val raw: List<RawEvent> = emptyList(),
+    val done: Set<String> = emptySet(),
+    val skipped: Set<String> = emptySet(),
 ) {
     val isLiftDay get() = plan.any { it.isWorkout }
     val calorieTarget get() = if (isLiftDay) Targets.CAL_LIFT else Targets.CAL_REST
     val proteinTarget get() = Targets.PROTEIN
 
     val meals get() = plan.filter { it.isFood }
-    /** A meal counts as eaten once its start time has passed. */
-    private val eaten get() = meals.filter { it.startMillis <= nowMillis }
+
+    fun answerFor(item: PlanItem) = when (item.doneKey) {
+        in done -> MealAnswer.ATE
+        in skipped -> MealAnswer.SKIPPED
+        else -> MealAnswer.UNANSWERED
+    }
+
+    /** Only meals you confirmed count. The clock passing a meal proves nothing. */
+    private val eaten get() = meals.filter { it.doneKey in done }
+
+    /** Meals whose time has come and gone that you haven't answered yet. */
+    val mealsToAnswer get() = meals
+        .filter { it.startMillis <= nowMillis && answerFor(it) == MealAnswer.UNANSWERED }
+        .sortedBy { it.startMillis }
+
     val caloriesSoFar get() = eaten.sumOf { it.calories }
     val proteinSoFar get() = eaten.sumOf { it.protein }
     val caloriesLeft get() = (calorieTarget - caloriesSoFar).coerceAtLeast(0)

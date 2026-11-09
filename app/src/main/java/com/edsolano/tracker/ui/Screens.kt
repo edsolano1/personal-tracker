@@ -10,11 +10,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -22,9 +22,14 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.edsolano.tracker.data.Charge
 import com.edsolano.tracker.data.DaySnapshot
+import com.edsolano.tracker.data.MealAnswer
 import com.edsolano.tracker.data.PlanItem
 import com.edsolano.tracker.data.PlanType
 
@@ -55,8 +61,15 @@ private fun Section(title: String, modifier: Modifier = Modifier, content: @Comp
 }
 
 @Composable
-private fun Muted(text: String, small: Boolean = false, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) =
-    Text(text, color = color, style = if (small) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium)
+private fun Muted(
+    text: String,
+    small: Boolean = false,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier: Modifier = Modifier,
+) = Text(
+    text, modifier, color = color,
+    style = if (small) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+)
 
 // ---------- Today ----------
 
@@ -103,10 +116,8 @@ private fun TimelineRow(item: PlanItem, isPast: Boolean, isNext: Boolean, done: 
             if (detail.isNotEmpty()) Muted(detail, small = true,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha))
         }
-        if (!item.isFood) {
-            Checkbox(checked = done, onCheckedChange = { onToggle() },
-                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary))
-        } else Spacer(Modifier.size(48.dp))
+        Checkbox(checked = done, onCheckedChange = { onToggle() },
+            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary))
     }
 }
 
@@ -124,26 +135,61 @@ private fun detailOf(item: PlanItem) = buildList {
 // ---------- Food ----------
 
 @Composable
-fun FoodScreen(s: DaySnapshot) {
+fun FoodScreen(
+    s: DaySnapshot,
+    onAnswer: (PlanItem, MealAnswer) -> Unit,
+    onSend: (String) -> Unit,
+    sendStatus: String?,
+    sent: List<String>,
+) {
     LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Section(if (s.isLiftDay) "Eaten vs target · lift day" else "Eaten vs target · rest day") {
                 Bar("Calories", s.caloriesSoFar, s.calorieTarget, "", AccentGreen)
                 Spacer(Modifier.height(14.dp))
                 Bar("Protein", s.proteinSoFar, s.proteinTarget, "g", ProteinBlue)
+                Spacer(Modifier.height(10.dp))
+                Muted("Only counts meals you've said yes to.", small = true)
+            }
+        }
+        val toAnswer = s.mealsToAnswer
+        if (toAnswer.isNotEmpty()) {
+            item {
+                Section(if (toAnswer.size == 1) "Did you eat this?" else "Did you eat these?") {
+                    toAnswer.forEachIndexed { i, m ->
+                        MealPrompt(m) { onAnswer(m, it) }
+                        if (i < toAnswer.lastIndex) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    }
+                }
             }
         }
         item {
             Section("Meals") {
                 if (s.meals.isEmpty()) Muted("No meals on the plan today.")
                 s.meals.forEach { m ->
-                    val eaten = m.startMillis <= s.nowMillis
+                    val answer = s.answerFor(m)
                     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(m.name, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (eaten) 1f else 0.7f))
-                            Muted("${m.slot ?: "Meal"} · ${Format.time(m.startMillis)}" + if (eaten) " · eaten" else "", small = true)
+                            Text(
+                                m.name,
+                                color = MaterialTheme.colorScheme.onSurface
+                                    .copy(alpha = if (answer == MealAnswer.ATE) 1f else 0.7f),
+                            )
+                            Muted(
+                                "${m.slot ?: "Meal"} · ${Format.time(m.startMillis)}" + when (answer) {
+                                    MealAnswer.ATE -> " · eaten"
+                                    MealAnswer.SKIPPED -> " · skipped"
+                                    MealAnswer.UNANSWERED -> ""
+                                },
+                                small = true,
+                            )
                         }
                         Text("${m.calories} cal · ${m.protein}g")
+                        Checkbox(
+                            checked = answer == MealAnswer.ATE,
+                            onCheckedChange = { onAnswer(m, if (it) MealAnswer.ATE else MealAnswer.UNANSWERED) },
+                            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary),
+                        )
                     }
                     m.swaps.forEach { sw -> Muted("   or ${sw.name}: ${sw.calories} cal · ${sw.protein}g", small = true) }
                 }
@@ -163,8 +209,55 @@ fun FoodScreen(s: DaySnapshot) {
                 }
             }
         }
+        item { MessageBox(onSend, sendStatus, sent) }
     }
 }
+
+@Composable
+private fun MealPrompt(item: PlanItem, onAnswer: (MealAnswer) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(item.name, fontWeight = FontWeight.SemiBold)
+        Muted(
+            "${item.slot ?: "Meal"} · ${Format.time(item.startMillis)} · " +
+                "${item.calories} cal · ${item.protein}g",
+            small = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { onAnswer(MealAnswer.ATE) }) { Text("Ate it") }
+            TextButton(onClick = { onAnswer(MealAnswer.SKIPPED) }) { Text("Skipped") }
+        }
+    }
+}
+
+/** A note straight to Claude. It is written onto the calendar, which Claude reads. */
+@Composable
+private fun MessageBox(onSend: (String) -> Unit, status: String?, sent: List<String>) =
+    Section("Message Claude") {
+        var text by rememberSaveable { mutableStateOf("") }
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Ate something off plan, feeling off, anything…") },
+            minLines = 3,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Muted(
+                status ?: "Goes onto your calendar, where Claude picks it up.",
+                small = true,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = { onSend(text); text = "" }, enabled = text.isNotBlank()) { Text("Send") }
+        }
+        if (sent.isNotEmpty()) {
+            HorizontalDivider(Modifier.padding(vertical = 10.dp))
+            Muted("Sent", small = true)
+            sent.forEach { Muted("· $it", small = true) }
+        }
+    }
 
 @Composable
 private fun Bar(label: String, value: Int, target: Int, unit: String, color: Color) {

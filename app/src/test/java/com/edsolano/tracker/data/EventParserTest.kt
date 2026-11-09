@@ -62,20 +62,48 @@ class EventParserTest {
         assertTrue(DaySnapshot(today, emptyList(), y, 0).moneyIsStale)
     }
 
-    @Test fun foodTotalsCountStartedMealsOnly() {
+    @Test fun foodTotalsCountConfirmedMealsOnly() {
+        val a = plan("[Plan] A", "type: meal\ncal: 400\nprotein: 40", 0, 10, 1)
+        val b = plan("[Plan] B", "type: meal\ncal: 600\nprotein: 50", 100, 110, 2)
+        val w = plan("[Plan] Lift", "type: workout\ncal: 0", 20, 30, 3)
+
+        // The clock has passed meal A, but nothing is confirmed, so nothing counts.
+        val untouched = DaySnapshot(today, listOf(a, w, b), null, 50)
+        assertEquals(0, untouched.caloriesSoFar)
+        assertEquals(0, untouched.proteinSoFar)
+        assertEquals(listOf("B"), untouched.upcoming().map { it.name })
+        assertEquals(2, untouched.meals.size)
+
+        val ateA = untouched.copy(done = setOf(a.doneKey))
+        assertEquals(400, ateA.caloriesSoFar)
+        assertEquals(40, ateA.proteinSoFar)
+
+        // Confirming a meal that has not come round yet still counts it.
+        assertEquals(1000, ateA.copy(done = setOf(a.doneKey, b.doneKey)).caloriesSoFar)
+    }
+
+    @Test fun onlyPastUnansweredMealsAreAskedAbout() {
         val a = plan("[Plan] A", "type: meal\ncal: 400\nprotein: 40", 0, 10, 1)
         val b = plan("[Plan] B", "type: meal\ncal: 600\nprotein: 50", 100, 110, 2)
         val w = plan("[Plan] Lift", "type: workout\ncal: 0", 20, 30, 3)
         val s = DaySnapshot(today, listOf(a, w, b), null, 50)
-        assertEquals(400, s.caloriesSoFar)
-        assertEquals(40, s.proteinSoFar)
-        assertEquals(listOf("B"), s.upcoming().map { it.name })
-        assertEquals(2, s.meals.size)
+
+        // A has been and gone; B has not, and the workout is not food.
+        assertEquals(listOf("A"), s.mealsToAnswer.map { it.name })
+        assertEquals(MealAnswer.UNANSWERED, s.answerFor(a))
+
+        // Answering either way stops it being asked about again.
+        assertTrue(s.copy(done = setOf(a.doneKey)).mealsToAnswer.isEmpty())
+        val skipped = s.copy(skipped = setOf(a.doneKey))
+        assertTrue(skipped.mealsToAnswer.isEmpty())
+        assertEquals(MealAnswer.SKIPPED, skipped.answerFor(a))
+        assertEquals(0, skipped.caloriesSoFar)
     }
 
     @Test fun fitsWhatsLeftRespectsCalories() {
         val big = plan("[Plan] Dinner", "type: meal\ncal: 1800\nprotein: 100\nswap: Tofu bowl | 500 | 35", 0, 1)
-        val s = DaySnapshot(today, listOf(big), null, 10)   // 100 cal left on a rest day
+        // 100 cal left on a rest day, once the big dinner is confirmed eaten.
+        val s = DaySnapshot(today, listOf(big), null, 10, done = setOf(big.doneKey))
         assertTrue(s.fitsWhatsLeft().all { it.calories <= 100 })
         val fresh = DaySnapshot(today, listOf(plan("[Plan] Later", "type: meal\ncal: 500\nswap: Tofu bowl | 500 | 35", 100, 110)), null, 10)
         assertTrue(fresh.fitsWhatsLeft(20).any { it.name == "Tofu bowl" })

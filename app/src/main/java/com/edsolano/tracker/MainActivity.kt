@@ -34,6 +34,10 @@ import androidx.lifecycle.lifecycleScope
 import com.edsolano.tracker.data.CalendarRepository
 import com.edsolano.tracker.data.DaySnapshot
 import com.edsolano.tracker.data.DoneStore
+import com.edsolano.tracker.data.MealAnswer
+import com.edsolano.tracker.data.MessageLog
+import com.edsolano.tracker.data.MessageWriter
+import com.edsolano.tracker.data.PlanItem
 import com.edsolano.tracker.ui.DebugScreen
 import com.edsolano.tracker.ui.FoodScreen
 import com.edsolano.tracker.ui.MoneyScreen
@@ -48,10 +52,13 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private val repo by lazy { CalendarRepository(this) }
     private val doneStore by lazy { DoneStore(this) }
+    private val messages by lazy { MessageWriter(this) }
+    private val messageLog by lazy { MessageLog(this) }
     private var snapshot by mutableStateOf(DaySnapshot.empty())
-    private var done by mutableStateOf(emptySet<String>())
     private var showDebug by mutableStateOf(false)
     private var hasCalendar by mutableStateOf(false)
+    private var sendStatus by mutableStateOf<String?>(null)
+    private var sent by mutableStateOf(emptyList<String>())
 
     private val askPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -70,12 +77,43 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestPerms() = askPermissions.launch(
-        arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.POST_NOTIFICATIONS)
+        arrayOf(
+            Manifest.permission.READ_CALENDAR,
+            Manifest.permission.WRITE_CALENDAR,
+            Manifest.permission.POST_NOTIFICATIONS,
+        )
     )
+
+    /** Records an answer and folds it straight into the snapshot so the bars move at once. */
+    private fun answer(item: PlanItem, value: MealAnswer) {
+        doneStore.mark(item.doneKey, value)
+        snapshot = snapshot.copy(done = doneStore.done(), skipped = doneStore.skipped())
+    }
+
+    private fun send(text: String) {
+        if (!messages.hasPermission()) {
+            sendStatus = "Needs calendar write access. Allow it, then tap Send again."
+            requestPerms()
+            return
+        }
+        lifecycleScope.launch {
+            val where = withContext(Dispatchers.IO) { messages.send(text) }
+            if (where == null) {
+                sendStatus = "Couldn't write it to the calendar."
+            } else {
+                val stamp = java.time.LocalTime.now().format(
+                    java.time.format.DateTimeFormatter.ofPattern("h:mm a")
+                )
+                withContext(Dispatchers.IO) { messageLog.add("$stamp  ${text.trim()}") }
+                sent = messageLog.recent()
+                sendStatus = "Sent to $where."
+            }
+        }
+    }
 
     private fun reload() {
         hasCalendar = repo.hasPermission()
-        done = doneStore.all()
+        sent = messageLog.recent()
         lifecycleScope.launch {
             snapshot = withContext(Dispatchers.IO) { repo.load() }
             if (hasCalendar) {
@@ -121,8 +159,22 @@ class MainActivity : ComponentActivity() {
                 } else if (showDebug) {
                     DebugScreen(snapshot, onBack = { showDebug = false })
                 } else when (tab) {
-                    0 -> TodayScreen(snapshot, done, onToggle = { done = doneStore.toggle(it) }, onDebug = { showDebug = true })
-                    1 -> FoodScreen(snapshot)
+                    0 -> TodayScreen(
+                        snapshot,
+                        snapshot.done,
+                        onToggle = {
+                            doneStore.toggle(it)
+                            snapshot = snapshot.copy(done = doneStore.done(), skipped = doneStore.skipped())
+                        },
+                        onDebug = { showDebug = true },
+                    )
+                    1 -> FoodScreen(
+                        snapshot,
+                        onAnswer = ::answer,
+                        onSend = ::send,
+                        sendStatus = sendStatus,
+                        sent = sent,
+                    )
                     else -> MoneyScreen(snapshot)
                 }
             }
