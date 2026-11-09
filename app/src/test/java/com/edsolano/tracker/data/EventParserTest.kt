@@ -100,6 +100,47 @@ class EventParserTest {
         assertEquals(0, skipped.caloriesSoFar)
     }
 
+    @Test fun eatenLineOnTheCalendarCountsTheMeal() {
+        val yes = plan("[Plan] Huel", "type: meal\ncal: 400\nprotein: 40\neaten: yes", 0, 10, 1)
+        val no = plan("[Plan] Lunch", "type: meal\ncal: 600\nprotein: 50\neaten: no", 20, 30, 2)
+        val quiet = plan("[Plan] Dinner", "type: meal\ncal: 700\nprotein: 55", 40, 50, 3)
+
+        assertEquals(true, yes.eatenOnCalendar)
+        assertEquals(false, no.eatenOnCalendar)
+        assertNull(quiet.eatenOnCalendar)
+
+        // Time has passed all three. Only the one marked eaten counts, and the
+        // untouched one is still waiting to be answered rather than assumed.
+        val s = DaySnapshot(today, listOf(yes, no, quiet), null, 100)
+        assertEquals(400, s.caloriesSoFar)
+        assertEquals(40, s.proteinSoFar)
+        assertEquals(MealAnswer.ATE, s.answerFor(yes))
+        assertEquals(MealAnswer.SKIPPED, s.answerFor(no))
+        assertEquals(MealAnswer.UNANSWERED, s.answerFor(quiet))
+        assertEquals(listOf("Dinner"), s.mealsToAnswer.map { it.name })
+        assertEquals(AnswerSource.CALENDAR, s.sourceFor(yes))
+        assertEquals(AnswerSource.NONE, s.sourceFor(quiet))
+    }
+
+    @Test fun aTapOnThePhoneBeatsTheLine() {
+        val yes = plan("[Plan] Huel", "type: meal\ncal: 400\nprotein: 40\neaten: yes", 0, 10, 1)
+        // He corrects it on the phone: he did not actually eat it.
+        val corrected = DaySnapshot(today, listOf(yes), null, 100, skipped = setOf(yes.doneKey))
+        assertEquals(MealAnswer.SKIPPED, corrected.answerFor(yes))
+        assertEquals(0, corrected.caloriesSoFar)
+        assertEquals(AnswerSource.PHONE, corrected.sourceFor(yes))
+    }
+
+    @Test fun onlyAClearYesOrNoIsAnAnswer() {
+        assertEquals(true, EventParser.yesNo("Yes"))
+        assertEquals(true, EventParser.yesNo(" ATE "))
+        assertEquals(false, EventParser.yesNo("no"))
+        assertEquals(false, EventParser.yesNo("skipped"))
+        assertNull(EventParser.yesNo("maybe"))
+        assertNull(EventParser.yesNo(""))
+        assertNull(plan("[Plan] Huel", "type: meal\neaten: probably").eatenOnCalendar)
+    }
+
     @Test fun fitsWhatsLeftRespectsCalories() {
         val big = plan("[Plan] Dinner", "type: meal\ncal: 1800\nprotein: 100\nswap: Tofu bowl | 500 | 35", 0, 1)
         // 100 cal left on a rest day, once the big dinner is confirmed eaten.

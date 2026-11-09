@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.edsolano.tracker.data.AnswerSource
 import com.edsolano.tracker.data.Charge
 import com.edsolano.tracker.data.DaySnapshot
 import com.edsolano.tracker.data.MealAnswer
@@ -61,7 +62,7 @@ private fun Section(title: String, modifier: Modifier = Modifier, content: @Comp
 }
 
 @Composable
-private fun Muted(
+internal fun Muted(
     text: String,
     small: Boolean = false,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -74,7 +75,7 @@ private fun Muted(
 // ---------- Today ----------
 
 @Composable
-fun TodayScreen(s: DaySnapshot, done: Set<String>, onToggle: (String) -> Unit, onDebug: () -> Unit) {
+fun TodayScreen(s: DaySnapshot, onToggle: (PlanItem, Boolean) -> Unit, onDebug: () -> Unit) {
     LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -91,7 +92,7 @@ fun TodayScreen(s: DaySnapshot, done: Set<String>, onToggle: (String) -> Unit, o
                 val next = s.upcoming(1).firstOrNull()
                 s.plan.forEachIndexed { i, it ->
                     TimelineRow(it, isPast = it.endMillis <= s.nowMillis, isNext = it == next,
-                        done = it.doneKey in done, onToggle = { onToggle(it.doneKey) })
+                        done = s.answerFor(it) == MealAnswer.ATE, onToggle = { on -> onToggle(it, on) })
                     if (i < s.plan.lastIndex) Spacer(Modifier.height(4.dp))
                 }
             }
@@ -100,7 +101,7 @@ fun TodayScreen(s: DaySnapshot, done: Set<String>, onToggle: (String) -> Unit, o
 }
 
 @Composable
-private fun TimelineRow(item: PlanItem, isPast: Boolean, isNext: Boolean, done: Boolean, onToggle: () -> Unit) {
+private fun TimelineRow(item: PlanItem, isPast: Boolean, isNext: Boolean, done: Boolean, onToggle: (Boolean) -> Unit) {
     val alpha = if ((isPast || done) && !isNext) 0.5f else 1f
     val bg = if (isNext) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
     Row(
@@ -116,7 +117,7 @@ private fun TimelineRow(item: PlanItem, isPast: Boolean, isNext: Boolean, done: 
             if (detail.isNotEmpty()) Muted(detail, small = true,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha))
         }
-        Checkbox(checked = done, onCheckedChange = { onToggle() },
+        Checkbox(checked = done, onCheckedChange = { onToggle(it) },
             colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary))
     }
 }
@@ -128,6 +129,7 @@ private fun detailOf(item: PlanItem) = buildList {
         else -> add(item.type.name.lowercase().replaceFirstChar { it.uppercase() })
     }
     item.minutes?.takeIf { it > 0 }?.let { add("$it min") }
+    item.portion?.let { add(it.label) }
     if (item.calories > 0) add("${item.calories} cal")
     if (item.protein > 0) add("${item.protein}g protein")
 }.joinToString(" · ")
@@ -138,6 +140,7 @@ private fun detailOf(item: PlanItem) = buildList {
 fun FoodScreen(
     s: DaySnapshot,
     onAnswer: (PlanItem, MealAnswer) -> Unit,
+    onEdit: (PlanItem) -> Unit,
     onSend: (String) -> Unit,
     sendStatus: String?,
     sent: List<String>,
@@ -149,7 +152,7 @@ fun FoodScreen(
                 Spacer(Modifier.height(14.dp))
                 Bar("Protein", s.proteinSoFar, s.proteinTarget, "g", ProteinBlue)
                 Spacer(Modifier.height(10.dp))
-                Muted("Only counts meals you've said yes to.", small = true)
+                Muted("Counts a meal once you say you ate it, or Claude marks it eaten.", small = true)
             }
         }
         val toAnswer = s.mealsToAnswer
@@ -157,7 +160,7 @@ fun FoodScreen(
             item {
                 Section(if (toAnswer.size == 1) "Did you eat this?" else "Did you eat these?") {
                     toAnswer.forEachIndexed { i, m ->
-                        MealPrompt(m) { onAnswer(m, it) }
+                        MealPrompt(m, onEdit = { onEdit(m) }) { onAnswer(m, it) }
                         if (i < toAnswer.lastIndex) HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     }
                 }
@@ -166,32 +169,36 @@ fun FoodScreen(
         item {
             Section("Meals") {
                 if (s.meals.isEmpty()) Muted("No meals on the plan today.")
-                s.meals.forEach { m ->
+                s.meals.forEachIndexed { i, m ->
                     val answer = s.answerFor(m)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
                                 m.name,
                                 color = MaterialTheme.colorScheme.onSurface
                                     .copy(alpha = if (answer == MealAnswer.ATE) 1f else 0.7f),
                             )
-                            Muted(
-                                "${m.slot ?: "Meal"} · ${Format.time(m.startMillis)}" + when (answer) {
-                                    MealAnswer.ATE -> " · eaten"
-                                    MealAnswer.SKIPPED -> " · skipped"
-                                    MealAnswer.UNANSWERED -> ""
-                                },
-                                small = true,
-                            )
+                            Muted(mealLine(s, m, answer), small = true)
                         }
                         Text("${m.calories} cal · ${m.protein}g")
                         Checkbox(
                             checked = answer == MealAnswer.ATE,
-                            onCheckedChange = { onAnswer(m, if (it) MealAnswer.ATE else MealAnswer.UNANSWERED) },
+                            // Unticking means "no, I didn't eat this", which is what gets written
+                            // back to the calendar. "Un-skip" below puts it back to simply planned.
+                            onCheckedChange = { onAnswer(m, if (it) MealAnswer.ATE else MealAnswer.SKIPPED) },
                             colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary),
                         )
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { onEdit(m) }) {
+                            Text(if (m.edited) "Edit again" else "Change this meal")
+                        }
+                        if (answer == MealAnswer.SKIPPED) {
+                            TextButton(onClick = { onAnswer(m, MealAnswer.UNANSWERED) }) { Text("Un-skip") }
+                        }
+                    }
                     m.swaps.forEach { sw -> Muted("   or ${sw.name}: ${sw.calories} cal · ${sw.protein}g", small = true) }
+                    if (i < s.meals.lastIndex) HorizontalDivider(Modifier.padding(top = 8.dp))
                 }
             }
         }
@@ -213,13 +220,31 @@ fun FoodScreen(
     }
 }
 
+/** What a meal's second line says: when it is, what portion, and who answered. */
+private fun mealLine(s: DaySnapshot, m: PlanItem, answer: MealAnswer) = buildList {
+    add(m.slot ?: "Meal")
+    add(Format.time(m.startMillis))
+    m.portion?.let { add(it.label) }
+    when (answer) {
+        MealAnswer.ATE -> add(if (s.sourceFor(m) == AnswerSource.CALENDAR) "eaten (from Claude)" else "eaten")
+        MealAnswer.SKIPPED -> add(if (s.sourceFor(m) == AnswerSource.CALENDAR) "skipped (from Claude)" else "skipped")
+        MealAnswer.UNANSWERED -> add("still planned")
+    }
+    m.planned?.let { add("plan said ${it.name}, ${it.calories} cal") }
+}.joinToString(" · ")
+
 @Composable
-private fun MealPrompt(item: PlanItem, onAnswer: (MealAnswer) -> Unit) {
+private fun MealPrompt(item: PlanItem, onEdit: () -> Unit, onAnswer: (MealAnswer) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Text(item.name, fontWeight = FontWeight.SemiBold)
         Muted(
-            "${item.slot ?: "Meal"} · ${Format.time(item.startMillis)} · " +
-                "${item.calories} cal · ${item.protein}g",
+            buildList {
+                add(item.slot ?: "Meal")
+                add(Format.time(item.startMillis))
+                item.portion?.let { add(it.label) }
+                add("${item.calories} cal")
+                add("${item.protein}g")
+            }.joinToString(" · "),
             small = true,
         )
         Spacer(Modifier.height(8.dp))
@@ -227,6 +252,7 @@ private fun MealPrompt(item: PlanItem, onAnswer: (MealAnswer) -> Unit) {
             Button(onClick = { onAnswer(MealAnswer.ATE) }) { Text("Ate it") }
             TextButton(onClick = { onAnswer(MealAnswer.SKIPPED) }) { Text("Skipped") }
         }
+        TextButton(onClick = onEdit) { Text("Had something else") }
     }
 }
 

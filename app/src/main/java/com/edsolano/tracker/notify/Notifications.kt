@@ -13,6 +13,7 @@ import com.edsolano.tracker.MainActivity
 import com.edsolano.tracker.R
 import com.edsolano.tracker.data.CalendarRepository
 import com.edsolano.tracker.data.DoneStore
+import com.edsolano.tracker.data.EatenWriter
 import com.edsolano.tracker.data.MealAnswer
 import com.edsolano.tracker.data.PlanItem
 import com.edsolano.tracker.widget.WidgetUpdater
@@ -74,7 +75,8 @@ object AlarmScheduler {
         }
 
         val mealCodes = mutableSetOf<String>()
-        all.filter { it.isFood && it.endMillis > now }.forEach { item ->
+        // A meal the calendar already answers needs no asking about.
+        all.filter { it.isFood && it.endMillis > now && it.eatenOnCalendar == null }.forEach { item ->
             val code = codeFor(item, "check")
             set(am, item.endMillis, alarmIntent(context, code, ACTION_CHECK, item))
             mealCodes += code.toString()
@@ -199,6 +201,9 @@ class PlanAlarmReceiver : BroadcastReceiver() {
         val finish = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
+                // The key is "eventId@startMillis", so the answer can go back onto the
+                // event itself without the app being open.
+                key.substringBefore('@').toLongOrNull()?.let { EatenWriter(context).write(it, answer) }
                 WidgetUpdater.updateAll(context)
             } finally {
                 finish.finish()

@@ -21,15 +21,28 @@ data class PlanItem(
     val calories: Int,
     val protein: Int,
     val swaps: List<Swap>,
+    /** The "eaten: yes/no" line on the calendar event. Null when the line isn't there. */
+    val eatenOnCalendar: Boolean? = null,
+    /** The portion the numbers above came from, once Eddie has entered one. */
+    val portion: Portion? = null,
+    /** What the plan said before he changed it, so "back to the plan" has something to go back to. */
+    val planned: Swap? = null,
 ) {
     val isWorkout get() = type == PlanType.WORKOUT
     val isFood get() = type == PlanType.MEAL || (type == PlanType.OTHER && (calories > 0 || protein > 0))
     /** Stable key for the local "done" check. */
     val doneKey get() = "$id@$startMillis"
+    /** True when he has changed this meal from what the plan said. */
+    val edited get() = planned != null
+    /** The meal as one food, which is what the editor starts from. */
+    val asFood get() = Food(name, calories, protein, portion ?: Portion(1.0, PortionUnit.SERVING))
 }
 
 /** Whether a meal on the plan actually happened. Nothing is assumed from the clock. */
 enum class MealAnswer { UNANSWERED, ATE, SKIPPED }
+
+/** Who answered: a tap on this phone, the calendar's "eaten" line, or nobody yet. */
+enum class AnswerSource { PHONE, CALENDAR, NONE }
 
 enum class ChargeStatus { PENDING, POSTED }
 
@@ -71,14 +84,28 @@ data class DaySnapshot(
 
     val meals get() = plan.filter { it.isFood }
 
-    fun answerFor(item: PlanItem) = when (item.doneKey) {
-        in done -> MealAnswer.ATE
-        in skipped -> MealAnswer.SKIPPED
+    /**
+     * A meal is eaten when Eddie tapped so, or when the calendar event says
+     * "eaten: yes". A tap on the phone wins over the line, because the tap is him
+     * answering about this meal directly: if he corrects an "eaten: yes" by
+     * tapping Skipped, that correction has to stick.
+     */
+    fun answerFor(item: PlanItem) = when {
+        item.doneKey in done -> MealAnswer.ATE
+        item.doneKey in skipped -> MealAnswer.SKIPPED
+        item.eatenOnCalendar == true -> MealAnswer.ATE
+        item.eatenOnCalendar == false -> MealAnswer.SKIPPED
         else -> MealAnswer.UNANSWERED
     }
 
-    /** Only meals you confirmed count. The clock passing a meal proves nothing. */
-    private val eaten get() = meals.filter { it.doneKey in done }
+    fun sourceFor(item: PlanItem) = when {
+        item.doneKey in done || item.doneKey in skipped -> AnswerSource.PHONE
+        item.eatenOnCalendar != null -> AnswerSource.CALENDAR
+        else -> AnswerSource.NONE
+    }
+
+    /** Only meals answered yes count. The clock passing a meal proves nothing. */
+    private val eaten get() = meals.filter { answerFor(it) == MealAnswer.ATE }
 
     /** Meals whose time has come and gone that you haven't answered yet. */
     val mealsToAnswer get() = meals

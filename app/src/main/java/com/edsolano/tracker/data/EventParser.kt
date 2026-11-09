@@ -14,7 +14,13 @@ object EventParser {
     fun isPlan(title: String?) = title?.trimStart()?.startsWith(PLAN_PREFIX, ignoreCase = true) == true
     fun isMoney(title: String?) = title?.trimStart()?.startsWith(MONEY_PREFIX, ignoreCase = true) == true
 
-    /** Description is "key: value" lines: type, slot, mins, cal, protein, swap. Unknown keys are ignored. */
+    /**
+     * Description is "key: value" lines: type, slot, mins, cal, protein, swap, eaten.
+     * Unknown keys are ignored.
+     *
+     * "eaten" is the only line that says a meal actually happened. Without it, and
+     * without a tap on the phone, the meal stays planned however long ago it was.
+     */
     fun parsePlan(id: Long, title: String, description: String?, start: Long, end: Long): PlanItem {
         val name = title.trimStart().substring(PLAN_PREFIX.length).trim()
         var type: String? = null
@@ -22,6 +28,7 @@ object EventParser {
         var mins: Int? = null
         var cal = 0
         var protein = 0
+        var eaten: Boolean? = null
         val swaps = mutableListOf<Swap>()
         description.orEmpty().lines().forEach { line ->
             val m = keyValue.find(line) ?: return@forEach
@@ -33,9 +40,20 @@ object EventParser {
                 "cal" -> cal = int(value) ?: 0
                 "protein" -> protein = int(value) ?: 0
                 "swap" -> parseSwap(value)?.let { swaps += it }
+                "eaten" -> eaten = yesNo(value)
             }
         }
-        return PlanItem(id, name, start, end, PlanType.from(type), slot, mins, cal, protein, swaps)
+        return PlanItem(
+            id, name, start, end, PlanType.from(type), slot, mins, cal, protein, swaps,
+            eatenOnCalendar = eaten,
+        )
+    }
+
+    /** Null for anything that isn't a clear yes or no, so a typo never counts a meal. */
+    internal fun yesNo(value: String): Boolean? = when (value.trim().lowercase()) {
+        "yes", "y", "true", "ate", "eaten", "1" -> true
+        "no", "n", "false", "skipped", "skip", "0" -> false
+        else -> null
     }
 
     /** "Huel | 400 | 40" → name | cal | protein */

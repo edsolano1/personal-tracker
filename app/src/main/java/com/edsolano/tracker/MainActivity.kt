@@ -34,12 +34,19 @@ import androidx.lifecycle.lifecycleScope
 import com.edsolano.tracker.data.CalendarRepository
 import com.edsolano.tracker.data.DaySnapshot
 import com.edsolano.tracker.data.DoneStore
+import com.edsolano.tracker.data.EatenWriter
+import com.edsolano.tracker.data.Food
+import com.edsolano.tracker.data.FoodEdit
+import com.edsolano.tracker.data.FoodStore
 import com.edsolano.tracker.data.MealAnswer
 import com.edsolano.tracker.data.MessageLog
 import com.edsolano.tracker.data.MessageWriter
 import com.edsolano.tracker.data.PlanItem
+import com.edsolano.tracker.data.Portion
+import com.edsolano.tracker.data.PortionUnit
 import com.edsolano.tracker.ui.DebugScreen
 import com.edsolano.tracker.ui.FoodScreen
+import com.edsolano.tracker.ui.MealEditor
 import com.edsolano.tracker.ui.MoneyScreen
 import com.edsolano.tracker.ui.TodayScreen
 import com.edsolano.tracker.ui.TrackerTheme
@@ -54,11 +61,15 @@ class MainActivity : ComponentActivity() {
     private val doneStore by lazy { DoneStore(this) }
     private val messages by lazy { MessageWriter(this) }
     private val messageLog by lazy { MessageLog(this) }
+    private val foodStore by lazy { FoodStore(this) }
+    private val eatenWriter by lazy { EatenWriter(this) }
     private var snapshot by mutableStateOf(DaySnapshot.empty())
     private var showDebug by mutableStateOf(false)
     private var hasCalendar by mutableStateOf(false)
     private var sendStatus by mutableStateOf<String?>(null)
     private var sent by mutableStateOf(emptyList<String>())
+    private var editing by mutableStateOf<PlanItem?>(null)
+    private var myFoods by mutableStateOf(emptyList<Food>())
 
     private val askPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -84,10 +95,53 @@ class MainActivity : ComponentActivity() {
         )
     )
 
-    /** Records an answer and folds it straight into the snapshot so the bars move at once. */
+    /**
+     * Records an answer and folds it straight into the snapshot so the bars move at once,
+     * then puts the same answer on the calendar event so Claude sees it too.
+     */
     private fun answer(item: PlanItem, value: MealAnswer) {
         doneStore.mark(item.doneKey, value)
         snapshot = snapshot.copy(done = doneStore.done(), skipped = doneStore.skipped())
+        // Only meals carry an "eaten" line; a tick on a workout stays on the phone.
+        if (!item.isFood) return
+        if (!eatenWriter.hasPermission()) requestPerms()
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                eatenWriter.write(item.id, value)
+                refreshEverything(this@MainActivity)
+            }
+        }
+    }
+
+    /**
+     * The timeline checkbox. For a meal, unticking means he did not eat it, which is a
+     * real answer and goes to the calendar; for anything else it is just a done check.
+     */
+    private fun toggle(item: PlanItem, checked: Boolean) {
+        if (item.isFood) {
+            answer(item, if (checked) MealAnswer.ATE else MealAnswer.SKIPPED)
+        } else {
+            doneStore.mark(item.doneKey, if (checked) MealAnswer.ATE else MealAnswer.UNANSWERED)
+            snapshot = snapshot.copy(done = doneStore.done(), skipped = doneStore.skipped())
+        }
+    }
+
+    /** Saves the change and, if he asked, keeps the food and portion for next time. */
+    private fun saveEdit(item: PlanItem, edit: FoodEdit, keepFood: Boolean) {
+        foodStore.save(item.doneKey, edit)
+        if (keepFood) {
+            foodStore.remember(
+                Food(edit.name, edit.calories, edit.protein, edit.portion ?: Portion(1.0, PortionUnit.SERVING))
+            )
+        }
+        editing = null
+        reload()
+    }
+
+    private fun backToPlan(item: PlanItem) {
+        foodStore.clear(item.doneKey)
+        editing = null
+        reload()
     }
 
     private fun send(text: String) {
@@ -114,6 +168,7 @@ class MainActivity : ComponentActivity() {
     private fun reload() {
         hasCalendar = repo.hasPermission()
         sent = messageLog.recent()
+        myFoods = foodStore.myFoods()
         lifecycleScope.launch {
             snapshot = withContext(Dispatchers.IO) { repo.load() }
             if (hasCalendar) {
@@ -127,6 +182,16 @@ class MainActivity : ComponentActivity() {
     private fun Root() {
         var tab by rememberSaveable { mutableIntStateOf(0) }
         BackHandler(enabled = showDebug) { showDebug = false }
+        editing?.let { item ->
+            MealEditor(
+                item = item,
+                myFoods = myFoods,
+                onSave = { edit, keep -> saveEdit(item, edit, keep) },
+                onBackToPlan = { backToPlan(item) },
+                onForgetFood = { foodStore.forget(it); myFoods = foodStore.myFoods() },
+                onDismiss = { editing = null },
+            )
+        }
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
@@ -159,18 +224,11 @@ class MainActivity : ComponentActivity() {
                 } else if (showDebug) {
                     DebugScreen(snapshot, onBack = { showDebug = false })
                 } else when (tab) {
-                    0 -> TodayScreen(
-                        snapshot,
-                        snapshot.done,
-                        onToggle = {
-                            doneStore.toggle(it)
-                            snapshot = snapshot.copy(done = doneStore.done(), skipped = doneStore.skipped())
-                        },
-                        onDebug = { showDebug = true },
-                    )
+                    0 -> TodayScreen(snapshot, onToggle = ::toggle, onDebug = { showDebug = true })
                     1 -> FoodScreen(
                         snapshot,
                         onAnswer = ::answer,
+                        onEdit = { editing = it },
                         onSend = ::send,
                         sendStatus = sendStatus,
                         sent = sent,

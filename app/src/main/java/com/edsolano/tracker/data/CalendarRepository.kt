@@ -29,6 +29,7 @@ class CalendarRepository(private val context: Context) {
         // Read the answers here so the widgets and notifications get the same totals
         // as the app without every caller having to wire the store through.
         val store = DoneStore(context)
+        val edits = FoodStore(context).edits()
         if (!hasPermission()) return DaySnapshot(date, emptyList(), null, now)
         val zone = ZoneId.systemDefault()
         // Yesterday through tomorrow, padded a day: covers all-day UTC offsets and the
@@ -53,10 +54,15 @@ class CalendarRepository(private val context: Context) {
                 EventParser.isPlan(r.title) -> {
                     val onDay = !r.allDay && r.begin < dayEnd && r.end > dayStart
                     if (onDay) {
-                        val p = EventParser.parsePlan(r.eventId, r.title, r.desc, r.begin, r.end)
+                        val p = applyEdit(
+                            EventParser.parsePlan(r.eventId, r.title, r.desc, r.begin, r.end), edits,
+                        )
                         plan += p
                         "Plan: ${p.type.name.lowercase()}, ${p.calories} cal, ${p.protein}g" +
-                            (p.slot?.let { ", $it" } ?: "") + (if (p.swaps.isNotEmpty()) ", ${p.swaps.size} swaps" else "")
+                            (p.slot?.let { ", $it" } ?: "") +
+                            (if (p.swaps.isNotEmpty()) ", ${p.swaps.size} swaps" else "") +
+                            (p.eatenOnCalendar?.let { if (it) ", eaten" else ", skipped" } ?: "") +
+                            (if (p.edited) ", edited on the phone" else "")
                     } else if (r.allDay) "Ignored: plan items need a start time" else "Plan, other day"
                 }
                 else -> {
@@ -78,6 +84,21 @@ class CalendarRepository(private val context: Context) {
         return DaySnapshot(
             date, plan.sortedBy { it.startMillis }, money, now, calendarFound,
             raw.sortedBy { it.begin }, store.done(), store.skipped(),
+        )
+    }
+
+    /**
+     * Folds in what Eddie changed about this meal. Done here rather than in the UI so
+     * the widgets, the notifications and the screens all read the same numbers.
+     */
+    private fun applyEdit(item: PlanItem, edits: Map<String, FoodEdit>): PlanItem {
+        val e = edits[item.doneKey] ?: return item
+        return item.copy(
+            name = e.name.ifBlank { item.name },
+            calories = e.calories,
+            protein = e.protein,
+            portion = e.portion,
+            planned = Swap(item.name, item.calories, item.protein),
         )
     }
 

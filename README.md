@@ -17,8 +17,15 @@ mins: 60
 cal: 0
 protein: 0
 swap: Huel | 400 | 40   # optional, meals only: name | cal | protein
+eaten: yes           # optional, meals only: yes | no
 ```
 A `type: workout` item makes it a lift day. Unknown keys are ignored.
+
+`eaten` is the only thing that says a meal happened. `eaten: yes` counts it
+towards the day's calories and protein, `eaten: no` marks it skipped, and
+with no line at all the meal stays planned however long ago it was. The app
+writes the same line back when Eddie answers on the phone, so the calendar
+is the one record both sides read.
 
 **Money** – all-day event `[Money] Spending left: $123.45`, description lines:
 ```
@@ -31,9 +38,20 @@ included); the app only displays it. The newest `[Money]` event for today
 wins; with none today, yesterday's is shown with an "as of" date.
 
 Targets: 165 g protein; 1,900 cal on rest days, 2,200 on lift days.
-A meal counts as eaten once its start time has passed. Done checks on
-non-food items are stored on the phone only. **Today → Raw events** shows
-every event the app read and how it parsed it.
+Nothing is ever assumed from the clock: a meal counts only once it is
+answered, on the phone or by an `eaten:` line. Done checks on non-food items
+are stored on the phone only. **Today → Raw events** shows every event the
+app read and how it parsed it.
+
+## Changing a meal
+**Food → Change this meal** swaps in a different food, takes a portion as an
+amount and a unit (servings, grams, oz, cups) and moves the calories and
+protein with it. Grams and ounces convert; cups and grams can't be compared
+without knowing the density, so it asks for the numbers instead of guessing.
+Typing a calorie or protein figure yourself stops the recalculating.
+"Save this food and portion" keeps it on the list for next time, and
+"Back to plan" throws the edit away. Edits live on the phone only — the
+`[Plan]` event itself is left exactly as Claude wrote it.
 
 ## Widgets
 - **Today** (3×2): next 4 plan items with times, calories and protein vs targets
