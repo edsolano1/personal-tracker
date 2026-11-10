@@ -15,7 +15,7 @@ object EventParser {
     fun isMoney(title: String?) = title?.trimStart()?.startsWith(MONEY_PREFIX, ignoreCase = true) == true
 
     /**
-     * Description is "key: value" lines: type, slot, mins, cal, protein, swap, eaten.
+     * Description is "key: value" lines: type, slot, mins, cal, protein, swap, eaten, portion.
      * Unknown keys are ignored.
      *
      * "eaten" is the only line that says a meal actually happened. Without it, and
@@ -29,6 +29,7 @@ object EventParser {
         var cal = 0
         var protein = 0
         var eaten: Boolean? = null
+        var portion: Portion? = null
         val swaps = mutableListOf<Swap>()
         description.orEmpty().lines().forEach { line ->
             val m = keyValue.find(line) ?: return@forEach
@@ -41,11 +42,12 @@ object EventParser {
                 "protein" -> protein = int(value) ?: 0
                 "swap" -> parseSwap(value)?.let { swaps += it }
                 "eaten" -> eaten = yesNo(value)
+                "portion" -> portion = Portion.parse(value)
             }
         }
         return PlanItem(
             id, name, start, end, PlanType.from(type), slot, mins, cal, protein, swaps,
-            eatenOnCalendar = eaten,
+            eatenOnCalendar = eaten, portion = portion,
         )
     }
 

@@ -53,6 +53,19 @@ Typing a calorie or protein figure yourself stops the recalculating.
 "Back to plan" throws the edit away. Edits live on the phone only — the
 `[Plan]` event itself is left exactly as Claude wrote it.
 
+## Adding a meal, and My foods
+**Food → Add a meal** logs something that was never on the plan. It is written
+to the calendar as a `[Plan]` event that already says `eaten: yes` (plus a
+`portion:` line when one was entered), so it counts at once and Claude sees it.
+Tapping a row under **Fits what's left** or **My foods** opens the same dialog
+already filled in. **New food** saves a food to the list without logging it.
+
+## Refresh
+Google syncs the calendar to the phone only about once a day by itself. The app
+asks for a sync when it comes to the front (at most every ten minutes), after
+adding a meal, and from **Today → Refresh**, which also shows when the calendar
+was last read.
+
 ## Widgets
 - **Today** (3×2): next 4 plan items with times, calories and protein vs targets
 - **Money** (2×1): spending left today

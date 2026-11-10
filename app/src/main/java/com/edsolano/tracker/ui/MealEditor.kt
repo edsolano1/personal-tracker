@@ -58,6 +58,11 @@ fun MealEditor(
     onBackToPlan: () -> Unit,
     onForgetFood: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** Set when this is not an edit of a planned meal: adding a meal, or a food for the list. */
+    title: String? = null,
+    saveLabel: String = "Save",
+    /** False when saving already means "keep this food", so the tick box would say nothing. */
+    showKeep: Boolean = true,
 ) {
     val mineNames = remember(myFoods) { myFoods.map { it.name.trim().lowercase() }.toSet() }
     val choices = remember(item, myFoods) { choicesFor(item, myFoods) }
@@ -78,6 +83,7 @@ fun MealEditor(
     val cal = calShown.toIntOrNull()
     val protein = proteinShown.toIntOrNull()
     val canSave = name.isNotBlank() && cal != null && protein != null
+    val shownName = name.ifBlank { "this food" }.take(28)
 
     fun pick(food: Food) {
         base = food
@@ -89,7 +95,7 @@ fun MealEditor(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (item.edited) "Edit meal" else "Change this meal") },
+        title = { Text(title ?: if (item.edited) "Edit meal" else "Change this meal") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Label("Food")
@@ -113,7 +119,7 @@ fun MealEditor(
                     )
                     Spacer(Modifier.width(10.dp))
                     Muted(
-                        wanted?.let { "of ${base.name.take(28)}" }
+                        wanted?.let { "of $shownName" }
                             ?: "Type an amount — 2, 1.5 or 1 1/2",
                         small = true,
                     )
@@ -124,6 +130,8 @@ fun MealEditor(
                 Muted(
                     when {
                         wanted == null -> "No amount yet."
+                        base.calories == 0 && base.protein == 0 ->
+                            "Pick a food below, or type the calories and protein."
                         scaled != null -> "${base.calories} cal and ${base.protein}g per " +
                             "${base.per.label} → ${scaled.calories} cal · ${scaled.protein}g"
                         else -> "Can't turn ${unit.words(2.0)} into ${base.per.unit.words(2.0)} " +
@@ -158,7 +166,7 @@ fun MealEditor(
                 }
 
                 Spacer(Modifier.height(4.dp))
-                Row(
+                if (showKeep) Row(
                     Modifier.fillMaxWidth().clickable { keep = !keep },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -187,7 +195,7 @@ fun MealEditor(
                 // The portion is recorded whether or not the numbers came from it: an
                 // amount he typed is worth showing, and it makes a saved food scale right.
                 onClick = { onSave(FoodEdit(name.trim(), cal ?: 0, protein ?: 0, wanted), keep) },
-            ) { Text("Save") }
+            ) { Text(saveLabel) }
         },
         dismissButton = {
             Row {
@@ -249,5 +257,5 @@ private fun choicesFor(item: PlanItem, mine: List<Food>): List<Food> {
             mine +
             item.swaps.map { Food(it.name, it.calories, it.protein) } +
             Targets.VEG_IDEAS.map { Food(it.name, it.calories, it.protein) }
-        ).distinctBy { it.name.trim().lowercase() }
+        ).filter { it.name.isNotBlank() }.distinctBy { it.name.trim().lowercase() }
 }

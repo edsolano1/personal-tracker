@@ -42,6 +42,8 @@ import com.edsolano.tracker.data.MealAnswer
 import com.edsolano.tracker.data.MessageLog
 import com.edsolano.tracker.data.MessageWriter
 import com.edsolano.tracker.data.PlanItem
+import com.edsolano.tracker.data.PlanType
+import com.edsolano.tracker.data.PlanWriter
 import com.edsolano.tracker.data.Portion
 import com.edsolano.tracker.data.PortionUnit
 import com.edsolano.tracker.ui.DebugScreen
@@ -53,8 +55,12 @@ import com.edsolano.tracker.ui.TrackerTheme
 import com.edsolano.tracker.work.RefreshScheduler
 import com.edsolano.tracker.work.refreshEverything
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** What the food editor is open for. */
+private enum class EditMode { EDIT, ADD, LIBRARY }
 
 class MainActivity : ComponentActivity() {
     private val repo by lazy { CalendarRepository(this) }
@@ -70,6 +76,11 @@ class MainActivity : ComponentActivity() {
     private var sent by mutableStateOf(emptyList<String>())
     private var editing by mutableStateOf<PlanItem?>(null)
     private var myFoods by mutableStateOf(emptyList<Food>())
+    private val planWriter by lazy { PlanWriter(this) }
+    private var editMode by mutableStateOf(EditMode.EDIT)
+    private var addStatus by mutableStateOf<String?>(null)
+    private var refreshing by mutableStateOf(false)
+    private var lastSyncAsk = 0L
 
     private val askPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -85,6 +96,57 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         reload()
+        // Google syncs this calendar by itself about once a day, so nudge it when the
+        // app comes forward, but not more than once every ten minutes.
+        if (System.currentTimeMillis() - lastSyncAsk > 10 * 60 * 1000) refresh(showBusy = false)
+    }
+
+    /** Asks the calendar to sync, then re-reads it a couple of times as the sync lands. */
+    private fun refresh(showBusy: Boolean = true) {
+        if (!repo.hasPermission()) return
+        lastSyncAsk = System.currentTimeMillis()
+        if (showBusy) refreshing = true
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) { planWriter.requestSync() }
+            delay(4_000)
+            reload()
+            delay(6_000)
+            reload()
+            refreshing = false
+        }
+    }
+
+    /** Opens the editor on a meal that isn't on the plan, optionally starting from a food. */
+    private fun startAdd(food: Food?, mode: EditMode = EditMode.ADD) {
+        val now = System.currentTimeMillis()
+        editMode = mode
+        editing = PlanItem(
+            id = -1, name = food?.name.orEmpty(), startMillis = now, endMillis = now,
+            type = PlanType.MEAL, slot = null, minutes = null,
+            calories = food?.calories ?: 0, protein = food?.protein ?: 0, swaps = emptyList(),
+            portion = food?.per,
+        )
+    }
+
+    private fun asFood(edit: FoodEdit) =
+        Food(edit.name, edit.calories, edit.protein, edit.portion ?: Portion(1.0, PortionUnit.SERVING))
+
+    /** Writes an off-plan meal onto the calendar, already marked eaten. */
+    private fun saveAdded(edit: FoodEdit, keepFood: Boolean) {
+        editing = null
+        if (keepFood) foodStore.remember(asFood(edit))
+        if (!planWriter.hasPermission()) {
+            addStatus = "Needs calendar write access. Allow it, then add it again."
+            requestPerms()
+            return
+        }
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                planWriter.addMeal(edit).also { if (it) planWriter.requestSync() }
+            }
+            addStatus = if (ok) "Added ${edit.name}." else "Couldn't write it to the calendar."
+            reload()
+        }
     }
 
     private fun requestPerms() = askPermissions.launch(
@@ -129,11 +191,7 @@ class MainActivity : ComponentActivity() {
     /** Saves the change and, if he asked, keeps the food and portion for next time. */
     private fun saveEdit(item: PlanItem, edit: FoodEdit, keepFood: Boolean) {
         foodStore.save(item.doneKey, edit)
-        if (keepFood) {
-            foodStore.remember(
-                Food(edit.name, edit.calories, edit.protein, edit.portion ?: Portion(1.0, PortionUnit.SERVING))
-            )
-        }
+        if (keepFood) foodStore.remember(asFood(edit))
         editing = null
         reload()
     }
@@ -186,10 +244,27 @@ class MainActivity : ComponentActivity() {
             MealEditor(
                 item = item,
                 myFoods = myFoods,
-                onSave = { edit, keep -> saveEdit(item, edit, keep) },
+                onSave = { edit, keep ->
+                    when (editMode) {
+                        EditMode.EDIT -> saveEdit(item, edit, keep)
+                        EditMode.ADD -> saveAdded(edit, keep)
+                        EditMode.LIBRARY -> {
+                            foodStore.remember(asFood(edit))
+                            editing = null
+                            myFoods = foodStore.myFoods()
+                        }
+                    }
+                },
                 onBackToPlan = { backToPlan(item) },
                 onForgetFood = { foodStore.forget(it); myFoods = foodStore.myFoods() },
                 onDismiss = { editing = null },
+                title = when (editMode) {
+                    EditMode.EDIT -> null
+                    EditMode.ADD -> "Add a meal"
+                    EditMode.LIBRARY -> "New food"
+                },
+                saveLabel = if (editMode == EditMode.ADD) "Add" else "Save",
+                showKeep = editMode != EditMode.LIBRARY,
             )
         }
         Scaffold(
@@ -224,14 +299,22 @@ class MainActivity : ComponentActivity() {
                 } else if (showDebug) {
                     DebugScreen(snapshot, onBack = { showDebug = false })
                 } else when (tab) {
-                    0 -> TodayScreen(snapshot, onToggle = ::toggle, onDebug = { showDebug = true })
+                    0 -> TodayScreen(
+                        snapshot, onToggle = ::toggle, onDebug = { showDebug = true },
+                        onRefresh = { refresh() }, refreshing = refreshing,
+                    )
                     1 -> FoodScreen(
                         snapshot,
                         onAnswer = ::answer,
-                        onEdit = { editing = it },
+                        onEdit = { editMode = EditMode.EDIT; editing = it },
                         onSend = ::send,
                         sendStatus = sendStatus,
                         sent = sent,
+                        myFoods = myFoods,
+                        onAdd = { startAdd(it) },
+                        onNewFood = { startAdd(null, EditMode.LIBRARY) },
+                        onForgetFood = { foodStore.forget(it); myFoods = foodStore.myFoods() },
+                        addStatus = addStatus,
                     )
                     else -> MoneyScreen(snapshot)
                 }

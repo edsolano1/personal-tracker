@@ -33,6 +33,17 @@ enum class PortionUnit(val choice: String, private val one: String, private val 
 data class Portion(val amount: Double, val unit: PortionUnit) {
     /** "2 servings", "180 g", "1.5 cups" */
     val label get() = "${Portions.number(amount)} ${unit.words(amount)}"
+
+    companion object {
+        /** Reads a label back: "180 g", "2 servings", "1 1/2 cups". Null when there is no amount. */
+        fun parse(text: String): Portion? {
+            val t = text.trim()
+            val cut = t.lastIndexOf(' ')
+            if (cut <= 0) return null
+            val amount = Portions.amount(t.substring(0, cut)) ?: return null
+            return if (amount > 0.0) Portion(amount, PortionUnit.from(t.substring(cut + 1))) else null
+        }
+    }
 }
 
 /** A food and what it is worth at one reference portion. */

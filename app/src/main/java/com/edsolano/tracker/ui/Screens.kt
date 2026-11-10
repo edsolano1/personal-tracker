@@ -1,6 +1,7 @@
 package com.edsolano.tracker.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.edsolano.tracker.data.AnswerSource
 import com.edsolano.tracker.data.Charge
 import com.edsolano.tracker.data.DaySnapshot
+import com.edsolano.tracker.data.Food
 import com.edsolano.tracker.data.MealAnswer
 import com.edsolano.tracker.data.PlanItem
 import com.edsolano.tracker.data.PlanType
@@ -75,7 +78,13 @@ internal fun Muted(
 // ---------- Today ----------
 
 @Composable
-fun TodayScreen(s: DaySnapshot, onToggle: (PlanItem, Boolean) -> Unit, onDebug: () -> Unit) {
+fun TodayScreen(
+    s: DaySnapshot,
+    onToggle: (PlanItem, Boolean) -> Unit,
+    onDebug: () -> Unit,
+    onRefresh: () -> Unit,
+    refreshing: Boolean,
+) {
     LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -84,6 +93,16 @@ fun TodayScreen(s: DaySnapshot, onToggle: (PlanItem, Boolean) -> Unit, onDebug: 
                     Muted("Target ${Format.int(s.calorieTarget)} cal · ${s.proteinTarget}g protein")
                 }
                 TextButton(onClick = onDebug) { Text("Raw events") }
+            }
+            // The calendar on the phone can lag behind what Claude wrote, so say how
+            // fresh this is and give him a way to pull the latest.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Muted(
+                    if (refreshing) "Asking the calendar to sync…"
+                    else "Calendar read at ${Format.time(s.nowMillis)}",
+                    small = true, modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onRefresh, enabled = !refreshing) { Text("Refresh") }
             }
         }
         item {
@@ -144,6 +163,12 @@ fun FoodScreen(
     onSend: (String) -> Unit,
     sendStatus: String?,
     sent: List<String>,
+    myFoods: List<Food>,
+    /** Add a meal that isn't on the plan; a food to start from, or null for a blank one. */
+    onAdd: (Food?) -> Unit,
+    onNewFood: () -> Unit,
+    onForgetFood: (String) -> Unit,
+    addStatus: String?,
 ) {
     LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -200,6 +225,12 @@ fun FoodScreen(
                     m.swaps.forEach { sw -> Muted("   or ${sw.name}: ${sw.calories} cal · ${sw.protein}g", small = true) }
                     if (i < s.meals.lastIndex) HorizontalDivider(Modifier.padding(top = 8.dp))
                 }
+                Spacer(Modifier.height(10.dp))
+                Button(onClick = { onAdd(null) }) { Text("Add a meal") }
+                Muted(
+                    addStatus ?: "For anything that wasn't on the plan. It counts straight away.",
+                    small = true, modifier = Modifier.padding(top = 4.dp),
+                )
             }
         }
         item {
@@ -209,11 +240,35 @@ fun FoodScreen(
                 val ideas = s.fitsWhatsLeft()
                 if (ideas.isEmpty()) Muted("You're at your calorie target.")
                 ideas.forEach {
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clickable { onAdd(Food(it.name, it.calories, it.protein)) }
+                            .padding(vertical = 6.dp),
+                    ) {
                         Text(it.name, Modifier.weight(1f))
                         Muted("${it.calories} cal · ${it.protein}g")
                     }
                 }
+                if (ideas.isNotEmpty()) Muted("Tap one to log it.", small = true)
+            }
+        }
+        item {
+            Section("My foods") {
+                if (myFoods.isEmpty()) Muted("Foods you save show up here, ready to log with a tap.")
+                myFoods.forEach { f ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onAdd(f) }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(f.name)
+                            Muted("${f.calories} cal · ${f.protein}g per ${f.per.label}", small = true)
+                        }
+                        TextButton(onClick = { onForgetFood(f.name) }) { Text("Forget") }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(onClick = onNewFood) { Text("New food") }
             }
         }
         item { MessageBox(onSend, sendStatus, sent) }

@@ -135,4 +135,39 @@ class FoodEditTest {
         assertEquals("eaten: yes", EatenLine.rewrite("", "yes"))
         assertEquals("eaten: yes", EatenLine.rewrite("eaten: no", "yes"))
     }
+
+    @Test fun portionLabelsReadBack() {
+        assertEquals(Portion(180.0, PortionUnit.GRAM), Portion.parse("180 g"))
+        assertEquals(Portion(2.0, PortionUnit.SERVING), Portion.parse("2 servings"))
+        assertEquals(Portion(1.5, PortionUnit.CUP), Portion.parse("1 1/2 cups"))
+        assertEquals(Portion(8.0, PortionUnit.OUNCE), Portion.parse(Portion(8.0, PortionUnit.OUNCE).label))
+        assertNull(Portion.parse("cups"))
+        assertNull(Portion.parse(""))
+    }
+
+    @Test fun anAddedMealCountsAsSoonAsItIsWritten() {
+        val edit = FoodEdit("Pizza slice", 350, 15, Portion(0.5, PortionUnit.SERVING))
+        val text = PlanText.addedMeal(edit, PlanText.slotFor(13))
+        val item = EventParser.parsePlan(9, "[Plan] Pizza slice", text, 0, 10)
+
+        assertEquals("Pizza slice", item.name)
+        assertEquals(PlanType.MEAL, item.type)
+        assertEquals("Lunch", item.slot)
+        assertEquals(350, item.calories)
+        assertEquals(15, item.protein)
+        assertEquals(Portion(0.5, PortionUnit.SERVING), item.portion)
+        assertEquals(true, item.eatenOnCalendar)
+
+        val day = DaySnapshot(java.time.LocalDate.of(2026, 11, 9), listOf(item), null, 100)
+        assertEquals(350, day.caloriesSoFar)
+        assertEquals(15, day.proteinSoFar)
+    }
+
+    @Test fun slotsFollowTheClock() {
+        assertEquals("Breakfast", PlanText.slotFor(8))
+        assertEquals("Lunch", PlanText.slotFor(12))
+        assertEquals("Snack", PlanText.slotFor(15))
+        assertEquals("Dinner", PlanText.slotFor(19))
+        assertEquals("Evening snack", PlanText.slotFor(22))
+    }
 }
