@@ -165,7 +165,7 @@ internal object Ics {
         var i = 0
         while (i < s.length) {
             val c = s[i]
-            if (c == '\' && i + 1 < s.length) {
+            if (c == '\\' && i + 1 < s.length) {
                 when (val n = s[i + 1]) {
                     'n', 'N' -> b.append('\n')
                     else -> b.append(n)

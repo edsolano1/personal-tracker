@@ -17,8 +17,8 @@ class IcsFeedTest {
         "DTEND:20261110T153000Z",
         "UID:abc123@google.com",
         "SUMMARY:[Plan] Huel Black",
-        "DESCRIPTION:type: meal\nslot: Breakfast\ncal: 400\nprotein: 40\ndetail: Shake",
-        "  it\, then drink",
+        "DESCRIPTION:type: meal\\nslot: Breakfast\\ncal: 400\\nprotein: 40\\ndetail: Shake",
+        "  it\\, then drink",
         "END:VEVENT",
         "BEGIN:VEVENT",
         "DTSTART;TZID=America/Phoenix:20261110T193000",
@@ -48,8 +48,8 @@ class IcsFeedTest {
         assertEquals("abc123", huel.googleId)
         assertEquals("[Plan] Huel Black", huel.title)
         assertTrue(huel.description.endsWith("detail: Shake it, then drink"))
-        assertEquals(1794236400000L, huel.begin) // 8:00 AM Phoenix
-        assertEquals(1794277800000L, events[1].begin) // 7:30 PM Phoenix, from TZID
+        assertEquals(1794322800000L, huel.begin) // 8:00 AM Phoenix
+        assertEquals(1794364200000L, events[1].begin) // 7:30 PM Phoenix, from TZID
         assertTrue(events[2].allDay)
     }
 
