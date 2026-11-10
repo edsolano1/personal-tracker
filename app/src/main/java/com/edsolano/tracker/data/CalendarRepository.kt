@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
+import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Instances
 import java.time.Instant
 import java.time.LocalDate
@@ -15,15 +16,7 @@ class CalendarRepository(private val context: Context) {
     fun hasPermission() = context.checkSelfPermission(Manifest.permission.READ_CALENDAR) ==
         PackageManager.PERMISSION_GRANTED
 
-    private data class Row(
-        val eventId: Long, val calendar: String, val title: String, val desc: String,
-        val begin: Long, val end: Long, val allDay: Boolean,
-    ) {
-        /** The local date this instance belongs to (all-day events are stored at UTC midnight). */
-        fun date(zone: ZoneId): LocalDate =
-            if (allDay) Instant.ofEpochMilli(begin).atOffset(ZoneOffset.UTC).toLocalDate()
-            else Instant.ofEpochMilli(begin).atZone(zone).toLocalDate()
-    }
+    private val feed by lazy { IcsFeed(context) }
 
     fun load(date: LocalDate = LocalDate.now(), now: Long = System.currentTimeMillis()): DaySnapshot {
         // Read the answers here so the widgets and notifications get the same totals
@@ -36,10 +29,16 @@ class CalendarRepository(private val context: Context) {
         // "show yesterday's money" fallback.
         val from = date.minusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
         val to = date.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
-        val all = query(from, to).filter { EventParser.isPlan(it.title) || EventParser.isMoney(it.title) }
+        val device = query(from, to)
+        // With the iCal link set, Google's copy is the truth and the phone only adds
+        // what it has not uploaded yet. Without it, read the phone alone as before.
+        val feedEvents = feed.events()
+        val merged = if (feedEvents != null) FeedMerge.merge(device, syncInfo(), feedEvents, from, to) else device
+        val all = merged.filter { EventParser.isPlan(it.title) || EventParser.isMoney(it.title) }
 
         // Prefer the dedicated calendar; fall back to any calendar if it doesn't exist yet.
-        val calendarFound = all.any { it.calendar.equals(Targets.CALENDAR_NAME, ignoreCase = true) }
+        val calendarFound = feedEvents != null ||
+            all.any { it.calendar.equals(Targets.CALENDAR_NAME, ignoreCase = true) }
         val rows = if (calendarFound) all.filter { it.calendar.equals(Targets.CALENDAR_NAME, ignoreCase = true) } else all
 
         val dayStart = date.atStartOfDay(zone).toInstant().toEpochMilli()
@@ -102,6 +101,18 @@ class CalendarRepository(private val context: Context) {
         )
     }
 
+    /** Google's id and the unsent-changes flag for each event in the dedicated calendar. */
+    private fun syncInfo(): Map<Long, SyncInfo> = runCatching {
+        val out = mutableMapOf<Long, SyncInfo>()
+        context.contentResolver.query(
+            Events.CONTENT_URI, arrayOf(Events._ID, Events._SYNC_ID, Events.DIRTY),
+            "${Events.CALENDAR_DISPLAY_NAME} = ?", arrayOf(Targets.CALENDAR_NAME), null,
+        )?.use { c ->
+            while (c.moveToNext()) out[c.getLong(0)] = SyncInfo(c.getString(1), c.getInt(2) == 1)
+        }
+        out as Map<Long, SyncInfo>
+    }.getOrDefault(emptyMap())
+
     private fun query(from: Long, to: Long): List<Row> {
         val uri = Instances.CONTENT_URI.buildUpon().also {
             ContentUris.appendId(it, from)
@@ -121,5 +132,45 @@ class CalendarRepository(private val context: Context) {
             }
         }
         return out
+    }
+}
+
+internal data class Row(
+    val eventId: Long, val calendar: String, val title: String, val desc: String,
+    val begin: Long, val end: Long, val allDay: Boolean,
+) {
+    /** The local date this instance belongs to (all-day events are stored at UTC midnight). */
+    fun date(zone: ZoneId): LocalDate =
+        if (allDay) Instant.ofEpochMilli(begin).atOffset(ZoneOffset.UTC).toLocalDate()
+        else Instant.ofEpochMilli(begin).atZone(zone).toLocalDate()
+}
+
+/** Google's event id for a phone event (null until uploaded), and whether it has unsent edits. */
+internal data class SyncInfo(val googleId: String?, val dirty: Boolean)
+
+/** Puts Google's copy of the dedicated calendar together with what only the phone knows. */
+internal object FeedMerge {
+    fun merge(device: List<Row>, sync: Map<Long, SyncInfo>, feed: List<IcsEvent>, from: Long, to: Long): List<Row> {
+        val isTracker = { r: Row -> r.calendar.equals(Targets.CALENDAR_NAME, ignoreCase = true) }
+        val trackerRows = device.filter(isTracker)
+        val byGoogleId = trackerRows.mapNotNull { r -> sync[r.eventId]?.googleId?.let { it to r } }.toMap()
+        val out = device.filterNot(isTracker).toMutableList()
+        val used = mutableSetOf<Long>()
+        for (e in feed) {
+            if (e.begin >= to || maxOf(e.end, e.begin + 1) <= from) continue
+            val local = byGoogleId[e.googleId]
+            if (local != null) used += local.eventId
+            // A phone edit Google hasn't received yet (a tick, an added "eaten:") wins.
+            out += if (local != null && sync[local.eventId]?.dirty == true) local
+            else Row(
+                // Keep the phone's id when it has the event, so ticks and "eaten:" writes
+                // still land on it; otherwise a stable negative id the writers refuse.
+                local?.eventId ?: -(e.googleId.hashCode().toLong() and 0x7fffffffL) - 1,
+                Targets.CALENDAR_NAME, e.title, e.description, e.begin, e.end, e.allDay,
+            )
+        }
+        // Events made on the phone that never reached Google yet still count.
+        out += trackerRows.filter { it.eventId !in used && sync[it.eventId]?.let { s -> s.googleId == null } == true }
+        return out.sortedBy { it.begin }
     }
 }

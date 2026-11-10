@@ -96,3 +96,13 @@ https://developer.android.com/tools/releases/platform-tools
    long-press the home screen → **Widgets → Personal Tracker**.
 
 Pairing is only needed once; next time start from step 4.
+
+## Reading straight from Google (iCal link)
+
+The phone syncs the "Personal Tracker" calendar about once a day and ignores requests to sync
+sooner, so a plan Claude just wrote can be invisible for hours. Tap **Add iCal link** on Today
+and paste the calendar's *Secret address in iCal format* (Google Calendar → Settings →
+Personal Tracker). The app then downloads that feed on open, on Refresh and every 30 minutes,
+and treats Google's copy as the truth. Phone-side changes Google hasn't received yet (ticks,
+meals added on the phone) still win until they upload. The link is stored only in the app's
+private storage; anyone who has it can read the calendar.

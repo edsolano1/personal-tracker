@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- Only to download the calendar's own iCal feed from Google. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Writing is only used to put a "[Msg]" event on the calendar for Claude to read. -->
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

@@ -23,9 +23,18 @@ suspend fun refreshEverything(context: Context) {
     AlarmScheduler.scheduleUpcoming(context)
 }
 
+/** Downloads Google's copy first (when the link is set), then redraws. */
+suspend fun fetchAndRefresh(context: Context) {
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        com.edsolano.tracker.data.IcsFeed(context).fetch()
+    }
+    refreshEverything(context)
+}
+
+
 class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
-        refreshEverything(applicationContext)
+        fetchAndRefresh(applicationContext)
         return Result.success()
     }
 }

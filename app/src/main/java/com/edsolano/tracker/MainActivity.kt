@@ -38,6 +38,7 @@ import com.edsolano.tracker.data.EatenWriter
 import com.edsolano.tracker.data.Food
 import com.edsolano.tracker.data.FoodEdit
 import com.edsolano.tracker.data.FoodStore
+import com.edsolano.tracker.data.IcsFeed
 import com.edsolano.tracker.data.MealAnswer
 import com.edsolano.tracker.data.MessageLog
 import com.edsolano.tracker.data.MessageWriter
@@ -47,6 +48,8 @@ import com.edsolano.tracker.data.PlanWriter
 import com.edsolano.tracker.data.Portion
 import com.edsolano.tracker.data.PortionUnit
 import com.edsolano.tracker.ui.DebugScreen
+import com.edsolano.tracker.ui.FeedLinkDialog
+import com.edsolano.tracker.ui.Format
 import com.edsolano.tracker.ui.FoodScreen
 import com.edsolano.tracker.ui.MealEditor
 import com.edsolano.tracker.ui.MoneyScreen
@@ -81,6 +84,10 @@ class MainActivity : ComponentActivity() {
     private var addStatus by mutableStateOf<String?>(null)
     private var refreshing by mutableStateOf(false)
     private var lastSyncAsk = 0L
+    private val feed by lazy { IcsFeed(this) }
+    private var linkSet by mutableStateOf(false)
+    private var freshness by mutableStateOf("")
+    private var showLink by mutableStateOf(false)
 
     private val askPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -98,7 +105,7 @@ class MainActivity : ComponentActivity() {
         reload()
         // Google syncs this calendar by itself about once a day, so nudge it when the
         // app comes forward, but not more than once every ten minutes.
-        if (System.currentTimeMillis() - lastSyncAsk > 10 * 60 * 1000) refresh(showBusy = false)
+        if (System.currentTimeMillis() - lastSyncAsk > 2 * 60 * 1000) refresh(showBusy = false)
     }
 
     /** Asks the calendar to sync, then re-reads it a couple of times as the sync lands. */
@@ -107,12 +114,17 @@ class MainActivity : ComponentActivity() {
         lastSyncAsk = System.currentTimeMillis()
         if (showBusy) refreshing = true
         lifecycleScope.launch {
-            withContext(Dispatchers.IO) { planWriter.requestSync() }
-            delay(4_000)
-            reload()
-            delay(6_000)
+            withContext(Dispatchers.IO) {
+                planWriter.requestSync()
+                feed.fetch()
+            }
             reload()
             refreshing = false
+            if (feed.url == null) {
+                // Without the link the only hope is the phone's own sync landing.
+                delay(8_000)
+                reload()
+            }
         }
     }
 
@@ -227,6 +239,13 @@ class MainActivity : ComponentActivity() {
         hasCalendar = repo.hasPermission()
         sent = messageLog.recent()
         myFoods = foodStore.myFoods()
+        linkSet = feed.url != null
+        freshness = when {
+            !linkSet -> "Phone calendar read at ${Format.time(System.currentTimeMillis())}"
+            feed.lastError != null -> "Couldn't reach Google: ${feed.lastError}"
+            feed.fetchedAt > 0 -> "Google read at ${Format.time(feed.fetchedAt)}"
+            else -> "Reading Google…"
+        }
         lifecycleScope.launch {
             snapshot = withContext(Dispatchers.IO) { repo.load() }
             if (hasCalendar) {
@@ -240,6 +259,13 @@ class MainActivity : ComponentActivity() {
     private fun Root() {
         var tab by rememberSaveable { mutableIntStateOf(0) }
         BackHandler(enabled = showDebug) { showDebug = false }
+        if (showLink) {
+            FeedLinkDialog(
+                isSet = linkSet,
+                onSave = { feed.url = it; showLink = false; refresh() },
+                onDismiss = { showLink = false },
+            )
+        }
         editing?.let { item ->
             MealEditor(
                 item = item,
@@ -302,6 +328,7 @@ class MainActivity : ComponentActivity() {
                     0 -> TodayScreen(
                         snapshot, onToggle = ::toggle, onDebug = { showDebug = true },
                         onRefresh = { refresh() }, refreshing = refreshing,
+                        freshness = freshness, linkSet = linkSet, onLink = { showLink = true },
                     )
                     1 -> FoodScreen(
                         snapshot,

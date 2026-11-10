@@ -84,6 +84,9 @@ fun TodayScreen(
     onDebug: () -> Unit,
     onRefresh: () -> Unit,
     refreshing: Boolean,
+    freshness: String,
+    linkSet: Boolean,
+    onLink: () -> Unit,
 ) {
     LazyColumn(contentPadding = pad, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -98,12 +101,19 @@ fun TodayScreen(
             // fresh this is and give him a way to pull the latest.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Muted(
-                    if (refreshing) "Asking the calendar to sync…"
-                    else "Calendar read at ${Format.time(s.nowMillis)}",
+                    if (refreshing) "Checking Google…" else freshness,
                     small = true, modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onRefresh, enabled = !refreshing) { Text("Refresh") }
             }
+            if (!linkSet) {
+                Muted(
+                    "The phone only syncs this calendar about once a day. Add the calendar's " +
+                        "iCal link to read Claude's plan the moment it's written.",
+                    small = true,
+                )
+            }
+            TextButton(onClick = onLink) { Text(if (linkSet) "Change iCal link" else "Add iCal link") }
         }
         item {
             Section("Timeline") {
