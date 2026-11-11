@@ -7,6 +7,9 @@
     <!-- Writing is only used to put a "[Msg]" event on the calendar for Claude to read. -->
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The app updates itself from its GitHub releases. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Exact alarms so each plan-item notification lands on time. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
@@ -41,6 +44,7 @@
         </receiver>
 
         <receiver android:name=".notify.PlanAlarmReceiver" android:exported="false" />
+        <receiver android:name=".update.UpdateReceiver" android:exported="false" />
         <receiver android:name=".work.BootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

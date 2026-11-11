@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,3 +28,14 @@ jobs:
           name: personal-tracker-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # Each build on main becomes the "latest" release; the app checks version.txt and updates itself.
+      - name: Publish as latest release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts > version.txt
+          gh release delete latest -y --cleanup-tag || true
+          gh release create latest app/build/outputs/apk/debug/app-debug.apk version.txt \
+            --title "Latest build" --notes "versionCode $(cat version.txt)" --target "$GITHUB_SHA"

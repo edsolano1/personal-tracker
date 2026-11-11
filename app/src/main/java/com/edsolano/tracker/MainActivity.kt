@@ -101,6 +101,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch { com.edsolano.tracker.update.Updater.check(this@MainActivity) }
         enableEdgeToEdge()
         if (!repo.hasPermission()) requestPerms()
         openTab = intent?.getIntExtra("tab", -1) ?: -1
