@@ -28,12 +28,18 @@ import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
 /**
- * The Money tab is the "Eddie's Wallet" page itself, shown in a WebView signed in to
- * claude.ai. The page does all the maths; the app only reads what it shows (the big
- * number, the status pill, the newest charge) so it can send notifications.
+ * The Money tab is the wallet page on GitHub Pages, rebuilt hourly from Plaid by the
+ * "wallet" repo. Its numbers are encrypted; the key lives only in this app's private
+ * prefs ("wallet-link"/"key", set over adb) and travels in the link's #fragment.
+ * The app only reads what the page shows (the big number, the status pill, the newest
+ * charge) so it can send notifications.
  */
 object Wallet {
-    const val URL = "https://claude.ai/artifact/QKd3dk8kVWbMUgbgW2q2nW"
+    const val PAGE = "https://edsolano1.github.io/wallet/"
+
+    fun url(context: Context): String =
+        PAGE + (context.getSharedPreferences("wallet-link", Context.MODE_PRIVATE)
+            .getString("key", null)?.let { "#k=$it" } ?: "")
     const val CHANNEL = "wallet"
 
     /**
@@ -74,16 +80,7 @@ object Wallet {
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
         WebView.setWebContentsDebuggingEnabled(true)
         web.settings.setSupportMultipleWindows(true)
-        web.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String) {
-                // After signing in claude.ai lands on its chat screen; send it back to the wallet.
-                val u = android.net.Uri.parse(url)
-                val path = u.path.orEmpty()
-                if (u.host == "claude.ai" && !path.startsWith("/artifact") &&
-                    listOf("/login", "/magic-link", "/oauth", "/auth", "/verify", "/onboarding").none { path.startsWith(it) }
-                ) view.loadUrl(URL)
-            }
-        }
+        web.webViewClient = WebViewClient()
         web.webChromeClient = Popups(context)
         web.addJavascriptInterface(Bridge(context.applicationContext, onReport), "Tracker")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -196,7 +193,7 @@ class WalletCheckWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
         main.post {
             web = Wallet.newWebView(applicationContext).also {
                 it.layout(0, 0, 1080, 2400)
-                it.loadUrl(Wallet.URL)
+                it.loadUrl(Wallet.url(applicationContext))
             }
         }
         delay(45_000) // long enough for the page to sign in, ask Monarch and report twice

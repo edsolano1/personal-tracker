@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
     private var showLink by mutableStateOf(false)
     private val walletWeb by lazy {
         com.edsolano.tracker.wallet.Wallet.newWebView(this).also {
-            it.loadUrl(com.edsolano.tracker.wallet.Wallet.URL)
+            it.loadUrl(com.edsolano.tracker.wallet.Wallet.url(this@MainActivity))
         }
     }
     private var openTab by mutableIntStateOf(-1)
@@ -320,7 +320,7 @@ class MainActivity : ComponentActivity() {
                         NavigationBarItem(
                             selected = tab == i && !showDebug, onClick = {
                                 // Tapping Money again reloads the wallet page.
-                                if (i == 2 && tab == 2) walletWeb.loadUrl(com.edsolano.tracker.wallet.Wallet.URL)
+                                if (i == 2 && tab == 2) walletWeb.loadUrl(com.edsolano.tracker.wallet.Wallet.url(this@MainActivity))
                                 tab = i; showDebug = false
                             },
                             icon = { Icon(icon, contentDescription = label) }, label = { Text(label) },
