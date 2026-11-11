@@ -318,7 +318,11 @@ class MainActivity : ComponentActivity() {
                         "Money" to Icons.Filled.ShoppingCart,
                     ).forEachIndexed { i, (label, icon) ->
                         NavigationBarItem(
-                            selected = tab == i && !showDebug, onClick = { tab = i; showDebug = false },
+                            selected = tab == i && !showDebug, onClick = {
+                                // Tapping Money again reloads the wallet page.
+                                if (i == 2 && tab == 2) walletWeb.loadUrl(com.edsolano.tracker.wallet.Wallet.URL)
+                                tab = i; showDebug = false
+                            },
                             icon = { Icon(icon, contentDescription = label) }, label = { Text(label) },
                         )
                     }

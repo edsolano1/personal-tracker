@@ -72,13 +72,60 @@ object Wallet {
         web.settings.userAgentString = web.settings.userAgentString.replace("; wv)", ")")
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
-        web.webViewClient = WebViewClient()
-        web.webChromeClient = WebChromeClient()
+        WebView.setWebContentsDebuggingEnabled(true)
+        web.settings.setSupportMultipleWindows(true)
+        web.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                // After signing in claude.ai lands on its chat screen; send it back to the wallet.
+                val u = android.net.Uri.parse(url)
+                val path = u.path.orEmpty()
+                if (u.host == "claude.ai" && !path.startsWith("/artifact") &&
+                    listOf("/login", "/magic-link", "/oauth", "/auth", "/verify", "/onboarding").none { path.startsWith(it) }
+                ) view.loadUrl(URL)
+            }
+        }
+        web.webChromeClient = Popups(context)
         web.addJavascriptInterface(Bridge(context.applicationContext, onReport), "Tracker")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(web, WATCH, setOf("*"))
         }
         return web
+    }
+
+    /**
+     * Google's sign-in opens a popup window. A WebView drops popups unless the app makes
+     * one, so show it full screen in a dialog and close it when the page says so.
+     */
+    private class Popups(val context: Context) : WebChromeClient() {
+        private var dialog: android.app.Dialog? = null
+
+        @SuppressLint("SetJavaScriptEnabled")
+        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
+            val popup = WebView(view.context)
+            popup.settings.javaScriptEnabled = true
+            popup.settings.domStorageEnabled = true
+            popup.settings.javaScriptCanOpenWindowsAutomatically = true
+            popup.settings.userAgentString = view.settings.userAgentString
+            CookieManager.getInstance().setAcceptThirdPartyCookies(popup, true)
+            popup.webViewClient = WebViewClient()
+            popup.webChromeClient = object : WebChromeClient() {
+                override fun onCloseWindow(window: WebView) {
+                    dialog?.dismiss()
+                }
+            }
+            dialog = android.app.Dialog(view.context, android.R.style.Theme_DeviceDefault_NoActionBar).apply {
+                setContentView(popup)
+                setOnDismissListener { popup.destroy(); view.reload() }
+                show()
+            }
+            (resultMsg.obj as WebView.WebViewTransport).webView = popup
+            resultMsg.sendToTarget()
+            return true
+        }
+
+        override fun onCloseWindow(window: WebView) {
+            dialog?.dismiss()
+        }
     }
 
     private class Bridge(val context: Context, val onReport: ((String) -> Unit)?) {
