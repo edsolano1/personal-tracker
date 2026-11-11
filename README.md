@@ -106,3 +106,11 @@ Personal Tracker). The app then downloads that feed on open, on Refresh and ever
 and treats Google's copy as the truth. Phone-side changes Google hasn't received yet (ticks,
 meals added on the phone) still win until they upload. The link is stored only in the app's
 private storage; anyone who has it can read the calendar.
+
+## Money = the Wallet page
+
+The Money tab shows the "Eddie's Wallet" page from claude.ai itself. Sign in to claude.ai once
+inside the tab (the email code works; Google sign-in may refuse an in-app browser). The app
+watches what the page shows and notifies when a new charge appears, when the number drops, or
+when it says "Running low" / "Over". About once an hour it also opens the page in the
+background to check, so notifications can come while the app is closed (Android may delay it).

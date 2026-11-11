@@ -9,5 +9,7 @@ class App : Application() {
         super.onCreate()
         AlarmScheduler.createChannel(this)
         RefreshScheduler.ensureScheduled(this)
+        com.edsolano.tracker.wallet.Wallet.createChannel(this)
+        com.edsolano.tracker.wallet.Wallet.schedule(this)
     }
 }

@@ -88,6 +88,12 @@ class MainActivity : ComponentActivity() {
     private var linkSet by mutableStateOf(false)
     private var freshness by mutableStateOf("")
     private var showLink by mutableStateOf(false)
+    private val walletWeb by lazy {
+        com.edsolano.tracker.wallet.Wallet.newWebView(this).also {
+            it.loadUrl(com.edsolano.tracker.wallet.Wallet.URL)
+        }
+    }
+    private var openTab by mutableIntStateOf(-1)
 
     private val askPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -97,7 +103,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (!repo.hasPermission()) requestPerms()
+        openTab = intent?.getIntExtra("tab", -1) ?: -1
         setContent { TrackerTheme { Root() } }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        val t = intent.getIntExtra("tab", -1)
+        if (t >= 0) openTab = t
     }
 
     override fun onResume() {
@@ -259,6 +272,8 @@ class MainActivity : ComponentActivity() {
     private fun Root() {
         var tab by rememberSaveable { mutableIntStateOf(0) }
         BackHandler(enabled = showDebug) { showDebug = false }
+        if (openTab >= 0) { tab = openTab; openTab = -1 }
+        BackHandler(enabled = tab == 2 && walletWeb.canGoBack()) { walletWeb.goBack() }
         if (showLink) {
             FeedLinkDialog(
                 isSet = linkSet,
@@ -343,7 +358,7 @@ class MainActivity : ComponentActivity() {
                         onForgetFood = { foodStore.forget(it); myFoods = foodStore.myFoods() },
                         addStatus = addStatus,
                     )
-                    else -> MoneyScreen(snapshot)
+                    else -> com.edsolano.tracker.ui.WalletScreen(walletWeb)
                 }
             }
         }
