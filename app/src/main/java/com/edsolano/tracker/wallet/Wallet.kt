@@ -72,6 +72,7 @@ object Wallet {
         val web = WebView(context)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
+        web.settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE  // always show the newest page
         web.settings.javaScriptCanOpenWindowsAutomatically = true
         // Google refuses sign-in inside an embedded browser, so look like Chrome; the
         // email code sign-in on claude.ai works either way.
