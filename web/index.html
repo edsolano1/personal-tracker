@@ -73,7 +73,7 @@ h1{font:800 30px var(--display);font-variation-settings:"wdth" 105;margin:2px 0 
 /* vh can read as 0 inside the app's WebView, so Money fills the window with fixed positioning instead. */
 #v-money{position:fixed;inset:0;padding:0;max-width:none;min-height:0}
 #v-money iframe{border:0;width:100%;height:100%;display:block;background:var(--bg)}
-#v-money .back{position:fixed;top:14px;left:16px;z-index:2;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:6px 14px;color:var(--money)}
+#v-money .back{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);box-shadow:0 6px 20px rgba(0,0,0,.4);z-index:2;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:6px 14px;color:var(--money)}
 .msg{padding:14px 16px;border-radius:14px;background:#3A2C14;font-size:14px}
 </style>
 </head>
