@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
     private var addStatus by mutableStateOf<String?>(null)
     private var refreshing by mutableStateOf(false)
     private var lastSyncAsk = 0L
+    private var lastUpdateCheck = 0L
     private val feed by lazy { IcsFeed(this) }
     private var linkSet by mutableStateOf(false)
     private var freshness by mutableStateOf("")
@@ -106,7 +107,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        lifecycleScope.launch { com.edsolano.tracker.update.Updater.check(this@MainActivity) }
         enableEdgeToEdge()
         if (!repo.hasPermission()) requestPerms()
         openTab = intent?.getIntExtra("tab", -1) ?: -1
@@ -121,6 +121,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Look for a new version every time the app comes forward, not only on a cold start
+        // (Android keeps the app alive in the background, so onCreate rarely runs).
+        if (System.currentTimeMillis() - lastUpdateCheck > 5 * 60_000) {
+            lastUpdateCheck = System.currentTimeMillis()
+            lifecycleScope.launch { com.edsolano.tracker.update.Updater.check(this@MainActivity) }
+        }
         reload()
         // Google syncs this calendar by itself about once a day, so nudge it when the
         // app comes forward, but not more than once every ten minutes.
