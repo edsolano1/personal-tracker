@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Favorite
@@ -271,10 +274,11 @@ class MainActivity : ComponentActivity() {
 
     @androidx.compose.runtime.Composable
     private fun Root() {
-        var tab by rememberSaveable { mutableIntStateOf(0) }
+        var tab by rememberSaveable { mutableIntStateOf(-1) }  // -1 = home
         BackHandler(enabled = showDebug) { showDebug = false }
         if (openTab >= 0) { tab = openTab; openTab = -1 }
         BackHandler(enabled = tab == 2 && walletWeb.canGoBack()) { walletWeb.goBack() }
+        BackHandler(enabled = tab >= 0 && !showDebug && !(tab == 2 && walletWeb.canGoBack())) { tab = -1 }
         if (showLink) {
             FeedLinkDialog(
                 isSet = linkSet,
@@ -311,27 +315,11 @@ class MainActivity : ComponentActivity() {
         }
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
-            bottomBar = {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    listOf(
-                        "Today" to Icons.Filled.DateRange,
-                        "Food" to Icons.Filled.Favorite,
-                        "Money" to Icons.Filled.ShoppingCart,
-                    ).forEachIndexed { i, (label, icon) ->
-                        NavigationBarItem(
-                            selected = tab == i && !showDebug, onClick = {
-                                // Tapping Money again reloads the wallet page.
-                                if (i == 2 && tab == 2) walletWeb.loadUrl(com.edsolano.tracker.wallet.Wallet.url(this@MainActivity))
-                                tab = i; showDebug = false
-                            },
-                            icon = { Icon(icon, contentDescription = label) }, label = { Text(label) },
-                        )
-                    }
-                }
-            },
         ) { inner ->
             Column(Modifier.fillMaxSize().padding(inner)) {
-                if (!hasCalendar) {
+                if (tab < 0) {
+                    HomeScreen { tab = it }
+                } else if (tab != 2 && !hasCalendar) {
                     Column(
                         Modifier.fillMaxSize().padding(24.dp),
                         verticalArrangement = Arrangement.Center,
@@ -364,6 +352,31 @@ class MainActivity : ComponentActivity() {
                         addStatus = addStatus,
                     )
                     else -> com.edsolano.tracker.ui.WalletScreen(walletWeb)
+                }
+            }
+        }
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun HomeScreen(open: (Int) -> Unit) {
+        Column(
+            Modifier.fillMaxSize().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        ) {
+            listOf(Triple("Money", Icons.Filled.ShoppingCart, 2), Triple("Food", Icons.Filled.Favorite, 1),
+                Triple("Today", Icons.Filled.DateRange, 0)).forEach { (label, icon, i) ->
+                androidx.compose.material3.Card(
+                    onClick = { open(i) },
+                    modifier = Modifier.fillMaxWidth().height(if (i == 2) 180.dp else 120.dp),
+                ) {
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(icon, contentDescription = null, Modifier.size(36.dp))
+                        Text(label, Modifier.padding(start = 20.dp),
+                            style = MaterialTheme.typography.headlineMedium)
+                    }
                 }
             }
         }
