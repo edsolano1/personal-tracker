@@ -70,6 +70,9 @@ import kotlinx.coroutines.withContext
 /** What the food editor is open for. */
 private enum class EditMode { EDIT, ADD, LIBRARY }
 
+/** The web app holding Home, Today and Money. */
+private const val WEB_APP = "https://edsolano1.github.io/personal-tracker/"
+
 class MainActivity : ComponentActivity() {
     private val repo by lazy { CalendarRepository(this) }
     private val doneStore by lazy { DoneStore(this) }
@@ -101,6 +104,79 @@ class MainActivity : ComponentActivity() {
     }
     private var openTab by mutableIntStateOf(-1)
 
+    /**
+     * Home, Today and Money are web pages (edsolano1.github.io/personal-tracker), so a
+     * change to them reaches the phone without an install. The page reads the phone's
+     * calendar and acts on it through the `App` bridge below. Food is still native.
+     */
+    private val appWeb by lazy {
+        android.webkit.WebView(this).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+            setBackgroundColor(android.graphics.Color.parseColor("#0E1411"))
+            addJavascriptInterface(AppBridge(), "App")
+            webViewClient = android.webkit.WebViewClient()
+            webChromeClient = android.webkit.WebChromeClient()
+            loadUrl(WEB_APP)
+        }
+    }
+
+    private inner class AppBridge {
+        @android.webkit.JavascriptInterface
+        fun snapshot(): String = snapshotJson()
+
+        @android.webkit.JavascriptInterface
+        fun walletUrl(): String = com.edsolano.tracker.wallet.Wallet.url(this@MainActivity)
+
+        @android.webkit.JavascriptInterface
+        fun version(): String = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty()
+
+        @android.webkit.JavascriptInterface
+        fun toggle(key: String, checked: Boolean) = runOnUiThread {
+            snapshot.plan.firstOrNull { it.doneKey == key }?.let { toggle(it, checked) }
+        }
+
+        @android.webkit.JavascriptInterface
+        fun refresh() = runOnUiThread { refresh() }
+
+        @android.webkit.JavascriptInterface
+        fun open(what: String) = runOnUiThread {
+            when (what) {
+                "food" -> openTab = 1
+                "raw" -> showDebug = true
+                "link" -> showLink = true
+            }
+        }
+    }
+
+    private fun snapshotJson(): String {
+        val s = snapshot
+        val w = getSharedPreferences("wallet", MODE_PRIVATE)
+        fun ev(e: com.edsolano.tracker.data.CalEvent) = org.json.JSONObject()
+            .put("title", e.title).put("begin", e.begin).put("end", e.end)
+            .put("allDay", e.allDay).put("shared", e.calendar.contains("shared", true))
+        fun item(p: PlanItem) = org.json.JSONObject()
+            .put("key", p.doneKey).put("name", p.name).put("begin", p.startMillis).put("end", p.endMillis)
+            .put("type", p.type.name.lowercase()).put("food", p.isFood)
+            .put("calories", p.calories).put("protein", p.protein)
+            .put("done", s.answerFor(p) == MealAnswer.ATE)
+        return org.json.JSONObject()
+            .put("date", s.date.toString()).put("now", System.currentTimeMillis())
+            .put("calendar", hasCalendar)
+            .put("events", org.json.JSONArray(s.events.map(::ev)))
+            .put("plan", org.json.JSONArray(s.plan.map(::item)))
+            .put("food", org.json.JSONObject()
+                .put("calories", s.caloriesSoFar).put("calorieTarget", s.calorieTarget)
+                .put("protein", s.proteinSoFar).put("proteinTarget", s.proteinTarget)
+                .put("liftDay", s.isLiftDay))
+            .put("wallet", org.json.JSONObject()
+                .put("big", w.getString("big", "")).put("eyebrow", w.getString("eyebrow", ""))
+                .put("pill", w.getString("pill", "")))
+            .put("refreshing", refreshing).put("freshness", freshness)
+            .toString()
+    }
+
     private val askPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { reload() }
@@ -117,6 +193,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         val t = intent.getIntExtra("tab", -1)
         if (t >= 0) openTab = t
+    }
+
+    /** Notifications and widgets ask for a tab: Food is native, the rest are pages in the web app. */
+    private fun route(t: Int): Int {
+        if (t == 0 || t == 2) appWeb.evaluateJavascript("window.go && go('${if (t == 0) "today" else "money"}')", null)
+        return if (t == 1) 1 else -1
     }
 
     override fun onResume() {
@@ -282,13 +364,13 @@ class MainActivity : ComponentActivity() {
 
     @androidx.compose.runtime.Composable
     private fun Root() {
-        var tab by rememberSaveable { mutableIntStateOf(-1) }  // -1 = home
+        var tab by rememberSaveable { mutableIntStateOf(-1) }  // -1 = the web app, 1 = Food
         BackHandler(enabled = showDebug) { showDebug = false }
-        if (openTab >= 0) { tab = openTab; openTab = -1 }
-        // On Money, back closes a sub-screen (Groceries, Fund, Accounts, Details) first, then goes home.
-        BackHandler(enabled = tab >= 0 && !showDebug) {
-            val sub = walletWeb.url.orEmpty().substringAfter('#', "")
-            if (tab == 2 && sub in setOf("needs", "fund", "accounts", "details")) walletWeb.goBack() else tab = -1
+        if (openTab >= 0) { tab = route(openTab); openTab = -1 }
+        // Food goes back to the web app; in the web app, back walks its page history, then leaves.
+        BackHandler(enabled = tab >= 0 && !showDebug) { tab = -1 }
+        BackHandler(enabled = tab < 0 && !showDebug) {
+            if (appWeb.canGoBack()) appWeb.goBack() else finish()
         }
         if (showLink) {
             FeedLinkDialog(
@@ -334,9 +416,11 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize().padding(inner),
             ) { tab ->
             Column(Modifier.fillMaxSize()) {
-                if (tab < 0) {
-                    HomeScreen(snapshot, go)
-                } else if (tab != 2 && !hasCalendar) {
+                if (showDebug) {
+                    DebugScreen(snapshot, onBack = { showDebug = false })
+                } else if (tab < 0) {
+                    com.edsolano.tracker.ui.WalletScreen(appWeb)
+                } else if (!hasCalendar) {
                     Column(
                         Modifier.fillMaxSize().padding(24.dp),
                         verticalArrangement = Arrangement.Center,
