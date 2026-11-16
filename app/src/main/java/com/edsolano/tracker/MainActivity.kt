@@ -57,6 +57,8 @@ import com.edsolano.tracker.ui.FoodScreen
 import com.edsolano.tracker.ui.MealEditor
 import com.edsolano.tracker.ui.MoneyScreen
 import com.edsolano.tracker.ui.TodayScreen
+import com.edsolano.tracker.ui.HomeScreen
+import com.edsolano.tracker.ui.sectionTransition
 import com.edsolano.tracker.ui.TrackerTheme
 import com.edsolano.tracker.work.RefreshScheduler
 import com.edsolano.tracker.work.refreshEverything
@@ -316,9 +318,15 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
         ) { inner ->
-            Column(Modifier.fillMaxSize().padding(inner)) {
+            val go: (Int) -> Unit = { tab = it }
+            androidx.compose.runtime.LaunchedEffect(Unit) { walletWeb }  // keeps the home screen's wallet number fresh
+            androidx.compose.animation.AnimatedContent(
+                targetState = tab, transitionSpec = { sectionTransition() }, label = "section",
+                modifier = Modifier.fillMaxSize().padding(inner),
+            ) { tab ->
+            Column(Modifier.fillMaxSize()) {
                 if (tab < 0) {
-                    HomeScreen { tab = it }
+                    HomeScreen(snapshot, go)
                 } else if (tab != 2 && !hasCalendar) {
                     Column(
                         Modifier.fillMaxSize().padding(24.dp),
@@ -354,30 +362,6 @@ class MainActivity : ComponentActivity() {
                     else -> com.edsolano.tracker.ui.WalletScreen(walletWeb)
                 }
             }
-        }
-    }
-
-    @androidx.compose.runtime.Composable
-    private fun HomeScreen(open: (Int) -> Unit) {
-        Column(
-            Modifier.fillMaxSize().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        ) {
-            listOf(Triple("Money", Icons.Filled.ShoppingCart, 2), Triple("Food", Icons.Filled.Favorite, 1),
-                Triple("Today", Icons.Filled.DateRange, 0)).forEach { (label, icon, i) ->
-                androidx.compose.material3.Card(
-                    onClick = { open(i) },
-                    modifier = Modifier.fillMaxWidth().height(if (i == 2) 180.dp else 120.dp),
-                ) {
-                    androidx.compose.foundation.layout.Row(
-                        Modifier.fillMaxSize().padding(24.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(icon, contentDescription = null, Modifier.size(36.dp))
-                        Text(label, Modifier.padding(start = 20.dp),
-                            style = MaterialTheme.typography.headlineMedium)
-                    }
-                }
             }
         }
     }
