@@ -78,7 +78,7 @@ internal fun Muted(
 // ---------- Today ----------
 
 @Composable
-fun TodayScreen(
+private fun LegacyToday(
     s: DaySnapshot,
     onToggle: (PlanItem, Boolean) -> Unit,
     onDebug: () -> Unit,
@@ -130,7 +130,7 @@ fun TodayScreen(
 }
 
 @Composable
-private fun TimelineRow(item: PlanItem, isPast: Boolean, isNext: Boolean, done: Boolean, onToggle: (Boolean) -> Unit) {
+internal fun TimelineRow(item: PlanItem, isPast: Boolean, isNext: Boolean, done: Boolean, onToggle: (Boolean) -> Unit) {
     val alpha = if ((isPast || done) && !isNext) 0.5f else 1f
     val bg = if (isNext) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
     Row(

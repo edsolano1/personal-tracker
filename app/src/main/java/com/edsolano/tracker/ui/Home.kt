@@ -121,6 +121,11 @@ fun HomeScreen(snapshot: DaySnapshot, open: (Int) -> Unit) {
         Entrance(1) { MoneyCard(wallet) { open(MONEY) } }
         Entrance(2) { FoodCard(snapshot) { open(FOOD) } }
         Entrance(3) { TodayCard(snapshot) { open(TODAY) } }
+        val version = remember {
+            runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+        }
+        Text("Version $version", Modifier.fillMaxWidth().padding(top = 8.dp), fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
