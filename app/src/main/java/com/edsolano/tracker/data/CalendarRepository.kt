@@ -79,10 +79,21 @@ class CalendarRepository(private val context: Context) {
                 raw += RawEvent(r.calendar, r.title, r.desc, r.begin, r.allDay, parsed)
             }
         }
+        // Everything else on today's calendars, for the home screen. Birthdays and the
+        // tracker's own calendar are left out.
+        val events = device.filter {
+            !EventParser.isPlan(it.title) && !EventParser.isMoney(it.title) &&
+                !it.calendar.equals(Targets.CALENDAR_NAME, ignoreCase = true) &&
+                !it.calendar.contains("important dates", ignoreCase = true) &&
+                !it.calendar.startsWith("Holidays", ignoreCase = true) &&
+                (if (it.allDay) it.date(zone) == date else it.begin < dayEnd && it.end > dayStart)
+        }.distinctBy { it.title to it.begin }
+            .map { CalEvent(it.title, it.begin, it.end, it.allDay, it.calendar) }
+            .sortedWith(compareBy({ !it.allDay }, { it.begin }))
         val money = moneyByDate[date]?.second ?: moneyByDate[date.minusDays(1)]?.second
         return DaySnapshot(
             date, plan.sortedBy { it.startMillis }, money, now, calendarFound,
-            raw.sortedBy { it.begin }, store.done(), store.skipped(),
+            raw.sortedBy { it.begin }, store.done(), store.skipped(), events,
         )
     }
 

@@ -84,17 +84,8 @@ const val MONEY = 2
  */
 fun AnimatedContentTransitionScope<Int>.sectionTransition(): ContentTransform {
     val opening = targetState != HOME
-    val section = if (opening) targetState else initialState
-    val enter = when (section) {
-        MONEY -> scaleIn(spring(0.62f, Spring.StiffnessMediumLow), initialScale = 0.6f) + fadeIn(tween(220))
-        FOOD -> slideInVertically(spring(0.55f, Spring.StiffnessLow)) { it } + fadeIn(tween(200))
-        else -> slideInHorizontally(spring(0.8f, Spring.StiffnessMediumLow)) { it } + fadeIn(tween(200))
-    }
-    val exit = when (section) {
-        MONEY -> scaleOut(tween(220), targetScale = 0.6f) + fadeOut(tween(180))
-        FOOD -> slideOutVertically(tween(260)) { it } + fadeOut(tween(220))
-        else -> slideOutHorizontally(tween(260)) { it } + fadeOut(tween(220))
-    }
+    val enter = scaleIn(spring(0.62f, Spring.StiffnessMediumLow), initialScale = 0.6f) + fadeIn(tween(220))
+    val exit = scaleOut(tween(220), targetScale = 0.6f) + fadeOut(tween(180))
     val behind = scaleIn(tween(300), initialScale = 1.08f) + fadeIn(tween(300))
     val away = scaleOut(tween(250), targetScale = 1.08f) + fadeOut(tween(200))
     return if (opening) enter togetherWith away else behind togetherWith exit
@@ -133,11 +124,17 @@ fun HomeScreen(snapshot: DaySnapshot, open: (Int) -> Unit) {
     }
 }
 
-/** Cards rise into place one after another the first time home shows. */
+/** Set once the cards have risen in, so coming back home shows them already in place. */
+private var introPlayed = false
+
+/** Cards rise into place one after another, only the first time home shows after launch. */
 @Composable
 private fun Entrance(index: Int, content: @Composable () -> Unit) {
-    val t = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { delay(70L * index); t.animateTo(1f, spring(0.7f, Spring.StiffnessLow)) }
+    val t = remember { Animatable(if (introPlayed) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (t.value < 1f) { delay(70L * index); t.animateTo(1f, spring(0.7f, Spring.StiffnessLow)) }
+        introPlayed = true
+    }
     Box(Modifier.graphicsLayer { alpha = t.value.coerceIn(0f, 1f); translationY = (1 - t.value) * 120f }) { content() }
 }
 
@@ -209,17 +206,19 @@ private fun FoodCard(s: DaySnapshot, onClick: () -> Unit) {
 @Composable
 private fun TodayCard(s: DaySnapshot, onClick: () -> Unit) {
     val now = System.currentTimeMillis()
-    val next = s.plan.filter { it.endMillis > now }.sortedBy { it.startMillis }.take(3)
+    val next = s.events.filter { it.allDay || it.end > now }.take(4)
     val fmt = DateTimeFormatter.ofPattern("h:mm a")
     GlanceCard(TodayColor, Icons.Filled.DateRange, "Today", onClick) {
         if (next.isEmpty()) Text("Nothing else on the calendar today", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        next.forEach { item ->
+        next.forEach { e ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    Instant.ofEpochMilli(item.startMillis).atZone(ZoneId.systemDefault()).format(fmt),
+                    if (e.allDay) "All day" else Instant.ofEpochMilli(e.begin).atZone(ZoneId.systemDefault()).format(fmt),
                     color = TodayColor, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.width(76.dp),
                 )
-                Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
+                Text(e.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                if (e.calendar.contains("shared", ignoreCase = true))
+                    Text("Shared", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
             }
         }
     }

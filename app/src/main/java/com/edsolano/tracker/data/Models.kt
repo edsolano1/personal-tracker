@@ -68,6 +68,8 @@ data class RawEvent(
     val parsedAs: String,
 )
 
+data class CalEvent(val title: String, val begin: Long, val end: Long, val allDay: Boolean, val calendar: String)
+
 data class DaySnapshot(
     val date: LocalDate,
     val plan: List<PlanItem>,
@@ -77,6 +79,8 @@ data class DaySnapshot(
     val raw: List<RawEvent> = emptyList(),
     val done: Set<String> = emptySet(),
     val skipped: Set<String> = emptySet(),
+    /** Today's events from his own and the shared Google calendars (not plan or money items). */
+    val events: List<CalEvent> = emptyList(),
 ) {
     val isLiftDay get() = plan.any { it.isWorkout }
     val calorieTarget get() = if (isLiftDay) Targets.CAL_LIFT else Targets.CAL_REST
