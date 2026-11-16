@@ -133,19 +133,21 @@ class MainActivity : ComponentActivity() {
         fun version(): String = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty()
 
         @android.webkit.JavascriptInterface
-        fun toggle(key: String, checked: Boolean) = runOnUiThread {
-            snapshot.plan.firstOrNull { it.doneKey == key }?.let { toggle(it, checked) }
+        fun toggle(key: String, checked: Boolean) {
+            runOnUiThread { snapshot.plan.firstOrNull { it.doneKey == key }?.let { this@MainActivity.toggle(it, checked) } }
         }
 
         @android.webkit.JavascriptInterface
-        fun refresh() = runOnUiThread { refresh() }
+        fun refresh() { runOnUiThread { this@MainActivity.refresh() } }
 
         @android.webkit.JavascriptInterface
-        fun open(what: String) = runOnUiThread {
-            when (what) {
-                "food" -> openTab = 1
-                "raw" -> showDebug = true
-                "link" -> showLink = true
+        fun open(what: String) {
+            runOnUiThread {
+                when (what) {
+                    "food" -> openTab = 1
+                    "raw" -> showDebug = true
+                    "link" -> showLink = true
+                }
             }
         }
     }
