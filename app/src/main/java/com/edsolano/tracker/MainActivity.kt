@@ -279,8 +279,11 @@ class MainActivity : ComponentActivity() {
         var tab by rememberSaveable { mutableIntStateOf(-1) }  // -1 = home
         BackHandler(enabled = showDebug) { showDebug = false }
         if (openTab >= 0) { tab = openTab; openTab = -1 }
-        BackHandler(enabled = tab == 2 && walletWeb.canGoBack()) { walletWeb.goBack() }
-        BackHandler(enabled = tab >= 0 && !showDebug && !(tab == 2 && walletWeb.canGoBack())) { tab = -1 }
+        // On Money, back closes a sub-screen (Groceries, Fund, Accounts, Details) first, then goes home.
+        BackHandler(enabled = tab >= 0 && !showDebug) {
+            val sub = walletWeb.url.orEmpty().substringAfter('#', "")
+            if (tab == 2 && sub in setOf("needs", "fund", "accounts", "details")) walletWeb.goBack() else tab = -1
+        }
         if (showLink) {
             FeedLinkDialog(
                 isSet = linkSet,
