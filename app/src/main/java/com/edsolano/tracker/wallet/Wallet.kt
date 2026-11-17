@@ -56,7 +56,8 @@ object Wallet {
             var t = function(id){ var e = document.getElementById(id); return e && !e.hidden ? e.textContent.trim() : ''; };
             var row = document.querySelector('#list .row');
             var first = row ? Array.prototype.map.call(row.children, function(c){ return c.textContent.trim(); }).join(' | ') : '';
-            window.Tracker.report(big.textContent.trim(), t('pill'), t('eyebrow'), first, t('updated'));
+            var ask = document.getElementById('ask');
+            window.Tracker.report(big.textContent.trim(), t('pill'), t('eyebrow'), first, t('updated'), ask ? ask.textContent.trim() : '');
           }, 3000);
         })();
     """
@@ -128,8 +129,9 @@ object Wallet {
 
     private class Bridge(val context: Context, val onReport: ((String) -> Unit)?) {
         @JavascriptInterface
-        fun report(big: String, pill: String, eyebrow: String, first: String, updated: String) {
+        fun report(big: String, pill: String, eyebrow: String, first: String, updated: String, ask: String) {
             Alerts.seen(context, big, pill, eyebrow, first)
+            Alerts.asked(context, ask)
             onReport?.invoke(updated)
         }
     }
@@ -165,6 +167,15 @@ object Alerts {
             amount(big) != null && amount(lastBig) != null && amount(big)!! < amount(lastBig)!! - 0.5 ->
                 notify(context, 2, "Spending money now $big", headline)
         }
+    }
+
+    /** "Was this split?" — once per question, tapping opens Money where the page asks it. */
+    @Synchronized
+    fun asked(context: Context, ask: String) {
+        val p = context.getSharedPreferences("wallet", Context.MODE_PRIVATE)
+        if (ask.isBlank() || ask == p.getString("ask", null)) return
+        p.edit().putString("ask", ask).apply()
+        notify(context, 3, ask, "Tap to answer in Money")
     }
 
     private fun notify(context: Context, id: Int, title: String, text: String) {
