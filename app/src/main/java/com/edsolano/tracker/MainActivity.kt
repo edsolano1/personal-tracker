@@ -122,6 +122,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val chat by lazy { com.edsolano.tracker.chat.ChatPanel(this) }
+
     private inner class AppBridge {
         @android.webkit.JavascriptInterface
         fun snapshot(): String = snapshotJson()
@@ -139,6 +141,10 @@ class MainActivity : ComponentActivity() {
 
         @android.webkit.JavascriptInterface
         fun refresh() { runOnUiThread { this@MainActivity.refresh() } }
+
+        /** The floating Claude button: the in-app chat panel, on a tab ("money", "shopping") or the last one used. */
+        @android.webkit.JavascriptInterface
+        fun openChat(tab: String) { runOnUiThread { chat.open(tab.ifBlank { null }) } }
 
         /**
          * The floating Claude button. Hands a claude.ai link to Android, which opens it in
