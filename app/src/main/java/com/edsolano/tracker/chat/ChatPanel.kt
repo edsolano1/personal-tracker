@@ -9,12 +9,14 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Message
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -54,6 +56,10 @@ class ChatPanel(private val activity: Activity) {
     private fun dp(v: Int) = (v * activity.resources.displayMetrics.density).toInt()
 
     fun open(tab: String?) {
+        // A tab left on Google's sign-in hand-off page is stuck; start it over from its chat.
+        webs.forEach { (k, w) ->
+            if (w.url?.startsWith("https://accounts.google.com/gsi/") == true) w.loadUrl(prefs.getString("url-$k", null) ?: HOME)
+        }
         select(TABS.firstOrNull { it.first == tab }?.first ?: current)
         dialog.show()
     }
@@ -140,6 +146,11 @@ class ChatPanel(private val activity: Activity) {
             settings.userAgentString = settings.userAgentString.replace("; wv)", ")")
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            // Google sign-in finishes in a popup window. Without one it loads in place and the
+            // page goes blank (2026-11-20), so give it a real popup over the panel.
+            settings.setSupportMultipleWindows(true)
+            settings.javaScriptCanOpenWindowsAutomatically = true
+            webChromeClient = Popups()
             setBackgroundColor(BG)
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest): Boolean {
@@ -156,5 +167,35 @@ class ChatPanel(private val activity: Activity) {
             }
             loadUrl(prefs.getString("url-$key", null) ?: HOME)
         }
+    }
+
+    /** The sign-in popup: shown full screen above the panel, closed when the page closes it. */
+    private inner class Popups : WebChromeClient() {
+        private var shown: Dialog? = null
+
+        @SuppressLint("SetJavaScriptEnabled")
+        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+            val popup = WebView(activity).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.javaScriptCanOpenWindowsAutomatically = true
+                settings.userAgentString = view.settings.userAgentString
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                webViewClient = WebViewClient()
+                webChromeClient = object : WebChromeClient() {
+                    override fun onCloseWindow(window: WebView) { shown?.dismiss() }
+                }
+            }
+            shown = Dialog(activity, android.R.style.Theme_DeviceDefault_NoActionBar).apply {
+                setContentView(popup)
+                setOnDismissListener { popup.destroy(); view.reload() }
+                show()
+            }
+            (resultMsg.obj as WebView.WebViewTransport).webView = popup
+            resultMsg.sendToTarget()
+            return true
+        }
+
+        override fun onCloseWindow(window: WebView) { shown?.dismiss() }
     }
 }
