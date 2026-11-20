@@ -202,10 +202,32 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        holdSplash()
         enableEdgeToEdge()
         if (!repo.hasPermission()) requestPerms()
         openTab = intent?.getIntExtra("tab", -1) ?: -1
         setContent { TrackerTheme { Root() } }
+    }
+
+    /**
+     * Lets the splash's ring animation finish (it's short) instead of being cut off by the
+     * first frame, then zooms the splash away into the app.
+     */
+    private fun holdSplash() {
+        val until = android.os.SystemClock.uptimeMillis() + 750
+        val content = findViewById<android.view.View>(android.R.id.content)
+        content.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (android.os.SystemClock.uptimeMillis() < until) { content.postInvalidateDelayed(16); return false }
+                content.viewTreeObserver.removeOnPreDrawListener(this)
+                return true
+            }
+        })
+        splashScreen.setOnExitAnimationListener { view ->
+            view.animate().alpha(0f).scaleX(1.25f).scaleY(1.25f).setDuration(260)
+                .setInterpolator(android.view.animation.AccelerateInterpolator())
+                .withEndAction { view.remove() }.start()
+        }
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

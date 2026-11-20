@@ -1,0 +1,42 @@
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M54.0,27.0 A27.0,27.0 0 1,1 54.0,81.0 A27.0,27.0 0 1,1 54.0,27.0" android:strokeColor="#55C48D" android:strokeAlpha="0.16" android:strokeWidth="5.6" />
+    <path android:name="money" android:pathData="M36.64,33.32 A27.0,27.0 0 1,1 28.63,63.23" android:strokeColor="#55C48D" android:strokeWidth="5.6" android:strokeLineCap="round" android:trimPathEnd="0" />
+    <path android:pathData="M54.0,34.5 A19.5,19.5 0 1,1 54.0,73.5 A19.5,19.5 0 1,1 54.0,34.5" android:strokeColor="#F08A3C" android:strokeAlpha="0.16" android:strokeWidth="5.6" />
+    <path android:name="food" android:pathData="M62.24,36.33 A19.5,19.5 0 1,1 34.80,57.39" android:strokeColor="#F08A3C" android:strokeWidth="5.6" android:strokeLineCap="round" android:trimPathEnd="0" />
+    <path android:pathData="M54.0,42.0 A12.0,12.0 0 1,1 54.0,66.0 A12.0,12.0 0 1,1 54.0,42.0" android:strokeColor="#6B9BF2" android:strokeAlpha="0.16" android:strokeWidth="5.6" />
+    <path android:name="today" android:pathData="M65.28,58.10 A12.0,12.0 0 0,1 42.41,50.89" android:strokeColor="#6B9BF2" android:strokeWidth="5.6" android:strokeLineCap="round" android:trimPathEnd="0" />
+            <group android:name="spark" android:pivotX="54" android:pivotY="54" android:scaleX="0" android:scaleY="0" android:rotation="-90">
+                <path android:pathData="M54,47.6 Q55.1,52.9 60.4,54 Q55.1,55.1 54,60.4 Q52.9,55.1 47.6,54 Q52.9,52.9 54,47.6Z" android:fillColor="#FFF4E0" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="money">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="0" android:duration="420" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="food">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="110" android:duration="420" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="today">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1"
+                android:startOffset="220" android:duration="420" android:interpolator="@android:interpolator/fast_out_slow_in" />
+        </aapt:attr>
+    </target>
+    <target android:name="spark">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:startOffset="380" android:duration="380" android:interpolator="@android:anim/overshoot_interpolator" />
+                <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:startOffset="380" android:duration="380" android:interpolator="@android:anim/overshoot_interpolator" />
+                <objectAnimator android:propertyName="rotation" android:valueFrom="-90" android:valueTo="0" android:startOffset="380" android:duration="380" android:interpolator="@android:interpolator/fast_out_slow_in" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>
