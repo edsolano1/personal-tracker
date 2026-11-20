@@ -178,7 +178,29 @@ object Alerts {
         notify(context, 3, ask, "Tap to answer in Money")
     }
 
+    /**
+     * Two copies of the Money page report every few seconds (the Money tab and the one that
+     * keeps Home's number fresh). If they ever disagree, the values flip back and forth, and
+     * each flip used to buzz the phone (2026-11-20). So an alert fires once: the same one is
+     * never repeated within 6 hours, and money alerts are at most one per 2 minutes.
+     */
+    private const val QUIET = 6 * 60 * 60 * 1000L
+    private fun fresh(context: Context, id: Int, title: String): Boolean {
+        val p = context.getSharedPreferences("wallet-alerts", Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val key = "$id|${title.trim()}"
+        val recent = (p.getStringSet("recent", emptySet()) ?: emptySet())
+            .filter { now - (it.substringAfterLast("@").toLongOrNull() ?: 0L) < QUIET }
+        if (recent.any { it.substringBeforeLast("@") == key }) return false
+        if (id != 3 && now - p.getLong("any", 0L) < 2 * 60 * 1000L) return false
+        val e = p.edit().putStringSet("recent", (recent + "$key@$now").takeLast(40).toSet())
+        if (id != 3) e.putLong("any", now)
+        e.apply()
+        return true
+    }
+
     private fun notify(context: Context, id: Int, title: String, text: String) {
+        if (!fresh(context, id, title)) return
         val open = PendingIntent.getActivity(
             context, 0, Intent(context, MainActivity::class.java).putExtra("tab", 2),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -189,6 +211,7 @@ object Alerts {
             .setContentText(text)
             .setContentIntent(open)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(4000 + id, n) }
     }
