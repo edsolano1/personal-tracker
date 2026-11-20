@@ -140,6 +140,23 @@ class MainActivity : ComponentActivity() {
         @android.webkit.JavascriptInterface
         fun refresh() { runOnUiThread { this@MainActivity.refresh() } }
 
+        /**
+         * The floating Claude button. Hands a claude.ai link to Android, which opens it in
+         * the Claude app (or the browser). Only https claude.ai links, since the wallet
+         * iframe can reach this bridge too.
+         */
+        @android.webkit.JavascriptInterface
+        fun openUrl(url: String) {
+            val uri = android.net.Uri.parse(url)
+            if (uri.scheme != "https" || (uri.host != "claude.ai" && uri.host?.endsWith(".claude.ai") != true)) return
+            runOnUiThread {
+                runCatching {
+                    startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            }
+        }
+
         @android.webkit.JavascriptInterface
         fun open(what: String) {
             runOnUiThread {

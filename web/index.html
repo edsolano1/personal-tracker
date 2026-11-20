@@ -75,6 +75,11 @@ h1{font:800 30px var(--display);font-variation-settings:"wdth" 105;margin:2px 0 
 #v-money iframe{border:0;width:100%;height:100%;display:block;background:var(--bg)}
 #v-money .back{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);box-shadow:0 6px 20px rgba(0,0,0,.4);z-index:2;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:6px 14px;color:var(--money)}
 .msg{padding:14px 16px;border-radius:14px;background:#3A2C14;font-size:14px}
+/* The Claude button floats on every page and opens his chat with Claude. */
+#claude{position:fixed;right:16px;bottom:18px;z-index:5;width:50px;height:50px;border-radius:50%;border:0;display:grid;place-items:center;
+  background:#D97757;color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.45);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s}
+#claude:active{transform:scale(.9)}
+#claude-tip{position:fixed;right:16px;bottom:78px;z-index:5;max-width:260px;padding:10px 12px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.4)}
 </style>
 </head>
 <body>
@@ -131,6 +136,9 @@ h1{font:800 30px var(--display);font-variation-settings:"wdth" 105;margin:2px 0 
   <button class="back" data-back>‹ Home</button>
   <iframe id="m-frame" title="Wallet"></iframe>
 </main>
+
+<button id="claude" aria-label="Talk to Claude"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/><path d="M12 8.5v7M8.5 12h7"/></svg></button>
+<div id="claude-tip" hidden></div>
 
 <script>
 (function(){
@@ -220,6 +228,25 @@ h1{font:800 30px var(--display);font-variation-settings:"wdth" 105;margin:2px 0 
   document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
   document.querySelectorAll("[data-back]").forEach(b=>b.onclick=()=>history.back());
   document.querySelectorAll("[data-native]").forEach(b=>b.onclick=()=>{if(!App)return;b.dataset.native==="refresh"?App.refresh():App.open(b.dataset.native)});
+  // Tap: open his Claude chat (the Claude app picks up claude.ai links). Press and hold:
+  // paste the link to a specific chat, so the button goes straight there. The link stays
+  // on the phone only; it never goes into the public page.
+  (function(){
+    const b=$("claude"), tip=$("claude-tip"), KEY="claude.link", HOME="https://claude.ai/code";
+    const say=t=>{tip.textContent=t;tip.hidden=false;clearTimeout(say.t);say.t=setTimeout(()=>tip.hidden=true,4000)};
+    const link=()=>{try{return localStorage.getItem(KEY)||HOME}catch(e){return HOME}};
+    let held=false,timer=0;
+    b.addEventListener("pointerdown",()=>{held=false;timer=setTimeout(()=>{held=true;
+      const v=prompt("Paste the link to your Claude chat (in the Claude app: open the chat, then Share or Copy link). Leave empty to use the chat list.",link()===HOME?"":link());
+      if(v===null)return;const u=v.trim();
+      try{if(!u)localStorage.removeItem(KEY);else if(/^https:\/\/claude\.ai\//.test(u))localStorage.setItem(KEY,u);else return say("That isn't a claude.ai link.")}catch(e){}
+      say(u?"Saved. Tap the button to open that chat.":"Back to opening your chat list.")},600)});
+    ["pointerup","pointerleave","pointercancel"].forEach(e=>b.addEventListener(e,()=>clearTimeout(timer)));
+    b.addEventListener("contextmenu",e=>e.preventDefault());
+    b.onclick=()=>{if(held)return;
+      if(App&&App.openUrl){App.openUrl(link())}
+      else say("This button needs the latest Tracker app. Close and reopen the app to update it.")};
+  })();
   addEventListener("hashchange",show);
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
   show();load();setInterval(load,4000);
