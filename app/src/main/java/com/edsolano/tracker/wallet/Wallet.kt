@@ -6,11 +6,13 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.app.NotificationCompat
@@ -91,22 +93,54 @@ object Wallet {
         return web
     }
 
+    // Sign-in pages stay in the app; anything else (Chase, Ally) opens in its own app.
+    private val SIGN_IN = listOf("google.com", "gstatic.com", "googleusercontent.com", "claude.ai", "apple.com")
+
+    private fun signIn(u: Uri): Boolean {
+        val h = u.host ?: return false
+        return u.scheme == "https" && SIGN_IN.any { h == it || h.endsWith(".$it") }
+    }
+
+    private fun openOutside(context: Context, u: Uri) {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
     /**
      * Google's sign-in opens a popup window. A WebView drops popups unless the app makes
      * one, so show it full screen in a dialog and close it when the page says so.
+     * Other new-window links, like the money popup's Open Chase and Open Ally, go to the
+     * bank's own app (or the browser): inside a WebView the bank's sign-in had no saved
+     * login or passkey, so it was a dead end (2026-11-22).
      */
     private class Popups(val context: Context) : WebChromeClient() {
         private var dialog: android.app.Dialog? = null
 
         @SuppressLint("SetJavaScriptEnabled")
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
+            val hit = view.hitTestResult
+            if (hit.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                val link = hit.extra?.let(Uri::parse)
+                if (link != null && !signIn(link)) {
+                    openOutside(view.context, link)
+                    return false
+                }
+            }
+            var left = false
             val popup = WebView(view.context)
             popup.settings.javaScriptEnabled = true
             popup.settings.domStorageEnabled = true
             popup.settings.javaScriptCanOpenWindowsAutomatically = true
             popup.settings.userAgentString = view.settings.userAgentString
             CookieManager.getInstance().setAcceptThirdPartyCookies(popup, true)
-            popup.webViewClient = WebViewClient()
+            popup.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(v: WebView, req: WebResourceRequest): Boolean {
+                    if (signIn(req.url)) return false
+                    left = true
+                    openOutside(v.context, req.url)
+                    dialog?.dismiss()
+                    return true
+                }
+            }
             popup.webChromeClient = object : WebChromeClient() {
                 override fun onCloseWindow(window: WebView) {
                     dialog?.dismiss()
@@ -114,7 +148,7 @@ object Wallet {
             }
             dialog = android.app.Dialog(view.context, android.R.style.Theme_DeviceDefault_NoActionBar).apply {
                 setContentView(popup)
-                setOnDismissListener { popup.destroy(); view.reload() }
+                setOnDismissListener { popup.destroy(); if (!left) view.reload() }
                 show()
             }
             (resultMsg.obj as WebView.WebViewTransport).webView = popup

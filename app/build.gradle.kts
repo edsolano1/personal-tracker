@@ -12,8 +12,8 @@ android {
         applicationId = "com.edsolano.tracker"
         minSdk = 31
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.12.1"
+        versionCode = 24
+        versionName = "0.12.2"
     }
 
     // A fixed debug key, committed on purpose, so every CI build is signed the
