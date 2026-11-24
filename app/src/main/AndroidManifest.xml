@@ -1,19 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.READ_CALENDAR" />
-    <!-- Only to download the calendar's own iCal feed from Google. -->
+    <!-- The wallet page, the chat panel and updates. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Writing is only used to put a "[Msg]" event on the calendar for Claude to read. -->
-    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- The app updates itself from its GitHub releases. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Exact alarms so each plan-item notification lands on time. -->
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
 
     <application
         android:name=".App"
@@ -30,29 +24,6 @@
             </intent-filter>
         </activity>
 
-        <receiver android:name=".widget.TodayWidgetReceiver" android:exported="true" android:label="Today">
-            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today" />
-        </receiver>
-        <receiver android:name=".widget.MoneyWidgetReceiver" android:exported="true" android:label="Money">
-            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_money" />
-        </receiver>
-        <receiver android:name=".widget.ComboWidgetReceiver" android:exported="true" android:label="Today + Money">
-            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_combo" />
-        </receiver>
-
-        <receiver android:name=".notify.PlanAlarmReceiver" android:exported="false" />
         <receiver android:name=".update.UpdateReceiver" android:exported="false" />
-        <receiver android:name=".work.BootReceiver" android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-                <action android:name="android.intent.action.TIME_SET" />
-                <action android:name="android.intent.action.DATE_CHANGED" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>

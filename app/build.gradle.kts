@@ -12,8 +12,8 @@ android {
         applicationId = "com.edsolano.tracker"
         minSdk = 31
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.12.2"
+        versionCode = 25
+        versionName = "0.13.0"
     }
 
     // A fixed debug key, committed on purpose, so every CI build is signed the
@@ -50,8 +50,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
-    implementation("androidx.glance:glance-appwidget:1.1.1")
-    implementation("androidx.glance:glance-material3:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.webkit:webkit:1.12.1")
 
